@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2 } from 'lucide-react';
+import { CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2, Newspaper } from 'lucide-react';
 import {
   Bookmark,
   HomepageConfig,
@@ -810,6 +810,31 @@ export default function SettingsDashboard() {
               />
             </div>
           )}
+        </article>
+
+        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+          <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
+            <Newspaper className="h-4 w-4 text-cyan-300" />
+            热点新闻
+          </h2>
+          <div className="mt-3">
+            <label className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
+              <input
+                type="checkbox"
+                checked={config.news.enabled}
+                onChange={(event) => {
+                  updateConfig((prev) => ({
+                    ...prev,
+                    news: { ...prev.news, enabled: event.target.checked },
+                  }));
+                }}
+              />
+              在主页显示全球热点新闻
+            </label>
+            <p className="text-shadow-soft mt-2 text-xs text-white/85">
+              显示 GitHub 热门趋势项目作为全球热点新闻。新闻区域支持折叠/展开。
+            </p>
+          </div>
         </article>
 
         </div>
