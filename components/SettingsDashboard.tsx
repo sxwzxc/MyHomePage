@@ -554,7 +554,8 @@ export default function SettingsDashboard() {
           ) : null}
         </header>
 
-        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+        <div className="grid gap-6 xl:grid-cols-2">
+        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
           <h2 className="text-shadow-title text-base font-semibold text-white">页面文案</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input
@@ -584,7 +585,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <CloudSun className="h-4 w-4 text-cyan-300" />
             天气
@@ -605,7 +606,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
           <h2 className="text-shadow-title text-base font-semibold text-white">书签布局</h2>
 
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -671,7 +672,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
           <h2 className="text-shadow-title text-base font-semibold text-white">背景设置</h2>
 
           <div className="mt-3">
@@ -811,7 +812,11 @@ export default function SettingsDashboard() {
           )}
         </article>
 
-        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+        </div>
+
+        <div className="grid gap-6 2xl:grid-cols-[0.95fr,1.05fr]">
+
+        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <Search className="h-4 w-4 text-cyan-300" />
             搜索引擎
@@ -892,7 +897,7 @@ export default function SettingsDashboard() {
           </ul>
         </article>
 
-        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
@@ -1048,6 +1053,7 @@ export default function SettingsDashboard() {
             ))}
           </div>
         </article>
+        </div>
       </div>
     </section>
   );

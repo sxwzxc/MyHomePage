@@ -9,6 +9,7 @@ import {
   Settings,
   Search,
   ChevronDown,
+  Clock3,
   Bookmark as BookmarkIcon,
   MoreVertical,
   Loader2,
@@ -878,10 +879,26 @@ export default function HomepageDashboard() {
                 👁️ 访问：{visitCount ?? '-'}
               </span>
               <div className="rounded-2xl border border-white/15 bg-slate-950/55 px-4 py-3 text-sm text-white">
-                <p>{now.toLocaleDateString('zh-CN', { weekday: 'long' })}</p>
-                <p className="text-shadow-title text-lg font-semibold">
-                  {now.toLocaleTimeString('zh-CN', { hour12: false })}
-                </p>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="text-shadow-soft text-xs text-white/85">
+                      {now.toLocaleDateString('zh-CN', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                      })}
+                    </p>
+                    <p className="text-shadow-soft text-xs text-white/80">
+                      {now.toLocaleDateString('zh-CN', { weekday: 'long' })}
+                    </p>
+                    <p className="text-shadow-title text-lg font-semibold">
+                      {now.toLocaleTimeString('zh-CN', { hour12: false })}
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-white/20 bg-white/10 p-2 text-white/90">
+                    <Clock3 className="h-5 w-5" />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
