@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { CSSProperties, FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Pencil,
   Trash2,
@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { Bookmark, HomepageConfig, DEFAULT_HOMEPAGE_CONFIG } from '@/lib/homepage-config';
 import { getHomepageConfig, getVisitCount, saveHomepageConfig, fetchBookmarkFavicon } from '@/lib/utils';
-import ContextMenu, { ContextMenuItem } from '@/components/ui/context-menu';
+import ContextMenu from '@/components/ui/context-menu';
 import AnimatedBackground from '@/components/AnimatedBackground';
 
 type WeatherInfo = {
@@ -178,6 +178,24 @@ export default function HomepageDashboard() {
       config.searchEngines[0]
     );
   }, [config.searchEngines, selectedEngineId]);
+
+  const isCompactMode = config.bookmarkLayoutMode === 'compact';
+  const totalBookmarkCards = config.bookmarks.length + 1;
+  const desiredColumns = Math.max(1, Math.min(6, Math.round(config.bookmarkColumns || 4)));
+  const desktopColumns = Math.max(1, Math.min(desiredColumns, totalBookmarkCards));
+  const tabletColumns = Math.max(
+    1,
+    Math.min(Math.min(desiredColumns, 3), totalBookmarkCards)
+  );
+  const mobileColumns = Math.max(
+    1,
+    Math.min(Math.min(desiredColumns, 2), totalBookmarkCards)
+  );
+  const bookmarkGridStyle = {
+    '--bookmark-cols-mobile': String(mobileColumns),
+    '--bookmark-cols-sm': String(tabletColumns),
+    '--bookmark-cols-lg': String(desktopColumns),
+  } as unknown as CSSProperties;
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -469,41 +487,41 @@ export default function HomepageDashboard() {
   }
 
   return (
-    <section className="relative min-h-screen overflow-hidden px-4 py-8 text-slate-100 sm:px-6 lg:px-10">
+    <section className="relative min-h-screen overflow-hidden px-4 py-8 text-white sm:px-6 lg:px-10">
       <AnimatedBackground config={config.background} />
 
       <Link
         href="/settings"
-        className="fixed right-4 top-4 z-30 rounded-xl border border-white/20 bg-slate-900/70 p-2 text-slate-200 shadow-lg backdrop-blur transition hover:border-cyan-300/70 hover:text-white sm:right-6 sm:top-6"
+        className="fixed right-4 top-4 z-30 rounded-xl border border-white/20 bg-slate-950/70 p-2 text-white shadow-lg backdrop-blur transition hover:border-white/60 hover:bg-slate-900/80 sm:right-6 sm:top-6"
         title="设置"
       >
         <Settings className="h-5 w-5" />
       </Link>
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="relative rounded-3xl border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur-md">
+        <header className="relative rounded-3xl border border-white/15 bg-slate-900/50 p-5 shadow-2xl backdrop-blur-md">
           <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+              <h1 className="text-shadow-title text-2xl font-semibold tracking-tight text-white sm:text-3xl">
                 {config.pageTitle}
               </h1>
-              <p className="mt-1 text-sm text-slate-200/90">{config.pageSubtitle}</p>
+              <p className="text-shadow-soft mt-1 text-sm text-white/95">{config.pageSubtitle}</p>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-200/90">
-              <span className="rounded-full bg-black/30 px-3 py-1.5">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-white/95">
+              <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
                 {weather
                   ? `🌤 ${weather.cityName} · ${weather.weatherText} · ${weather.temperature.toFixed(1)}°C`
                   : weatherError
                     ? `🌤 ${weatherError}`
                     : '🌤 天气加载中...'}
               </span>
-              <span className="rounded-full bg-black/30 px-3 py-1.5">
+              <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
                 👁️ 访问：{visitCount ?? '-'}
               </span>
-              <div className="rounded-2xl bg-black/25 px-4 py-3 text-sm">
+              <div className="rounded-2xl border border-white/15 bg-slate-950/55 px-4 py-3 text-sm text-white">
                 <p>{now.toLocaleDateString('zh-CN', { weekday: 'long' })}</p>
-                <p className="text-lg font-semibold">
+                <p className="text-shadow-title text-lg font-semibold">
                   {now.toLocaleTimeString('zh-CN', { hour12: false })}
                 </p>
               </div>
@@ -517,11 +535,11 @@ export default function HomepageDashboard() {
           ) : null}
         </header>
 
-        <article className="rounded-2xl border border-white/10 bg-gradient-to-br from-black/25 to-black/15 p-5 shadow-lg backdrop-blur">
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur">
           <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSearch}>
             <div className="relative">
               <select
-                className="w-full appearance-none rounded-xl border border-white/20 bg-slate-900/70 py-3 pl-3 pr-8 text-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                className="w-full appearance-none rounded-xl border border-white/20 bg-slate-950/70 py-3 pl-3 pr-8 text-sm text-white outline-none transition focus:border-white/70 focus:ring-2 focus:ring-white/20"
                 value={selectedEngineId}
                 onChange={(event) => setSelectedEngineId(event.target.value)}
               >
@@ -539,14 +557,14 @@ export default function HomepageDashboard() {
               <input
                 value={searchKeyword}
                 onChange={(event) => setSearchKeyword(event.target.value)}
-                className="w-full rounded-xl border border-white/20 bg-slate-900/70 py-3 pl-10 pr-3 text-sm outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/20"
+                className="w-full rounded-xl border border-white/20 bg-slate-950/70 py-3 pl-10 pr-3 text-sm text-white outline-none transition focus:border-white/70 focus:ring-2 focus:ring-white/20"
                 placeholder="输入关键词后回车搜索..."
               />
             </div>
 
             <button
               type="submit"
-              className="flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-cyan-500 to-fuchsia-500 px-6 py-3 text-sm font-medium text-white transition hover:from-cyan-400 hover:to-fuchsia-400 hover:shadow-lg hover:shadow-fuchsia-500/20"
+              className="text-shadow-soft flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/20"
             >
               <Search className="h-4 w-4" />
               搜索
@@ -554,26 +572,69 @@ export default function HomepageDashboard() {
           </form>
         </article>
 
-        <article className="rounded-2xl border border-white/10 bg-gradient-to-br from-black/25 to-black/15 p-5 shadow-lg backdrop-blur">
-          <div className="mb-4 flex items-center justify-between">
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h2 className="flex items-center gap-2 text-lg font-semibold">
-                <BookmarkIcon className="h-5 w-5 text-cyan-400" />
+              <h2 className="text-shadow-title flex items-center gap-2 text-lg font-semibold text-white">
+                <BookmarkIcon className="h-5 w-5 text-white" />
                 书签收藏
               </h2>
-              <p className="mt-1 text-xs text-slate-400">
-                右键点击书签可进行编辑或删除
+              <p className="text-shadow-soft mt-1 text-xs text-white/85">
+                支持右键和菜单按钮快速编辑；布局可在设置页调整。
               </p>
             </div>
-            <span className="rounded-full bg-slate-800/50 px-2 py-1 text-xs text-slate-500">
+            <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/50 px-2 py-1 text-xs text-white/80">
               {config.bookmarks.length} 个书签
             </span>
           </div>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            {/* Quick Add Card */}
+          <div className="bookmark-grid mt-4" style={bookmarkGridStyle}>
+            {config.bookmarks.map((bookmark) => (
+              <div
+                key={bookmark.id}
+                onContextMenu={(event) => handleBookmarkContextMenu(event, bookmark)}
+                className={`group relative rounded-xl border border-white/15 bg-slate-950/45 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/45 hover:shadow-md ${
+                  isCompactMode ? 'p-3' : 'p-4'
+                }`}
+              >
+                <a
+                  href={bookmark.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={isCompactMode ? 'flex items-center gap-3' : 'block'}
+                >
+                  <div
+                    className={`flex items-center justify-center rounded-xl bg-white/10 ${
+                      isCompactMode
+                        ? 'h-12 w-12 shrink-0'
+                        : 'mb-3 h-14 w-14 transition group-hover:scale-105'
+                    }`}
+                  >
+                    <BookmarkAvatar bookmark={bookmark} />
+                  </div>
+                  <div className={isCompactMode ? 'min-w-0 flex-1' : ''}>
+                    <h3 className="text-shadow-soft truncate font-medium text-white">
+                      {bookmark.title}
+                    </h3>
+                    <p className="truncate text-xs text-white/70">
+                      {new URL(bookmark.url).hostname}
+                    </p>
+                  </div>
+                </a>
+
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 rounded-md p-1 text-white/60 opacity-0 transition hover:bg-white/10 hover:text-white group-hover:opacity-100"
+                  onClick={(event) => handleBookmarkMenuButtonClick(event, bookmark)}
+                  aria-label="打开书签菜单"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+
             {showQuickAdd ? (
-              <div className="rounded-xl border-2 border-dashed border-cyan-400/60 bg-slate-900/70 p-3">
+              <div className="rounded-xl border border-dashed border-white/40 bg-slate-950/50 p-3">
                 <form onSubmit={handleQuickAddBookmark}>
                   <input
                     type="text"
@@ -582,7 +643,7 @@ export default function HomepageDashboard() {
                     onChange={(e) =>
                       setQuickAddForm((prev) => ({ ...prev, title: e.target.value }))
                     }
-                    className="mb-2 w-full rounded-lg border border-white/20 bg-slate-800/70 px-2 py-1 text-sm outline-none focus:border-cyan-400"
+                    className="mb-2 w-full rounded-lg border border-white/20 bg-slate-900/70 px-2 py-1.5 text-sm text-white outline-none focus:border-white/60"
                     autoFocus
                   />
                   <input
@@ -592,16 +653,16 @@ export default function HomepageDashboard() {
                     onChange={(e) =>
                       setQuickAddForm((prev) => ({ ...prev, url: e.target.value }))
                     }
-                    className="mb-2 w-full rounded-lg border border-white/20 bg-slate-800/70 px-2 py-1 text-sm outline-none focus:border-cyan-400"
+                    className="mb-2 w-full rounded-lg border border-white/20 bg-slate-900/70 px-2 py-1.5 text-sm text-white outline-none focus:border-white/60"
                   />
-                  {quickAddError && (
-                    <p className="mb-2 text-xs text-red-300">{quickAddError}</p>
-                  )}
+                  {quickAddError ? (
+                    <p className="mb-2 text-xs text-amber-200">{quickAddError}</p>
+                  ) : null}
                   <div className="flex gap-2">
                     <button
                       type="submit"
                       disabled={isAddingBookmark}
-                      className="flex-1 rounded-lg bg-cyan-500 px-2 py-1 text-xs font-medium text-slate-900 transition hover:bg-cyan-400 disabled:opacity-50"
+                      className="flex-1 rounded-lg border border-white/25 bg-white/10 px-2 py-1.5 text-xs font-medium text-white transition hover:bg-white/20 disabled:opacity-50"
                     >
                       {isAddingBookmark ? '添加中...' : '添加'}
                     </button>
@@ -612,7 +673,7 @@ export default function HomepageDashboard() {
                         setQuickAddForm({ title: '', url: '' });
                         setQuickAddError(null);
                       }}
-                      className="rounded-lg bg-white/10 px-2 py-1 text-xs transition hover:bg-white/20"
+                      className="rounded-lg bg-white/10 px-2 py-1.5 text-xs text-white transition hover:bg-white/20"
                     >
                       取消
                     </button>
@@ -622,45 +683,19 @@ export default function HomepageDashboard() {
             ) : (
               <button
                 onClick={() => setShowQuickAdd(true)}
-                className="group rounded-xl border-2 border-dashed border-white/30 bg-slate-900/50 p-3 transition hover:border-cyan-400/60 hover:bg-slate-900/70"
+                className={`group rounded-xl border border-dashed border-white/35 bg-slate-950/45 transition hover:border-white/65 hover:bg-slate-900/65 ${
+                  isCompactMode ? 'flex items-center gap-3 p-3 text-left' : 'p-3'
+                }`}
               >
-                <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-cyan-500/20 text-cyan-400 transition group-hover:bg-cyan-500/30">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-white/90 transition group-hover:bg-white/20">
                   <Plus className="h-6 w-6" />
                 </div>
-                <h3 className="font-medium text-slate-300">添加书签</h3>
-                <p className="text-xs text-slate-400">快速添加新书签</p>
+                <div className={isCompactMode ? 'min-w-0 flex-1' : ''}>
+                  <h3 className="text-shadow-soft font-medium text-white">添加书签</h3>
+                  <p className="text-xs text-white/75">快速添加新书签</p>
+                </div>
               </button>
             )}
-
-            {/* Existing Bookmarks */}
-            {config.bookmarks.map((bookmark) => (
-              <div
-                key={bookmark.id}
-                onContextMenu={(event) => handleBookmarkContextMenu(event, bookmark)}
-                className="group relative rounded-xl border border-white/10 bg-gradient-to-br from-slate-900/70 to-slate-800/70 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-cyan-400/60 hover:shadow-lg hover:shadow-cyan-500/20"
-              >
-                <a href={bookmark.url} target="_blank" rel="noopener noreferrer">
-                  <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 transition group-hover:scale-110">
-                    <BookmarkAvatar bookmark={bookmark} />
-                  </div>
-                  <h3 className="truncate font-medium text-slate-100 transition group-hover:text-cyan-400">
-                    {bookmark.title}
-                  </h3>
-                  <p className="mt-1 truncate text-xs text-slate-400">
-                    {new URL(bookmark.url).hostname}
-                  </p>
-                </a>
-
-                <button
-                  type="button"
-                  className="absolute right-2 top-2 rounded-md p-1 text-slate-400 opacity-0 transition hover:bg-white/10 hover:text-slate-100 group-hover:opacity-100"
-                  onClick={(event) => handleBookmarkMenuButtonClick(event, bookmark)}
-                  aria-label="打开书签菜单"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
           </div>
         </article>
 

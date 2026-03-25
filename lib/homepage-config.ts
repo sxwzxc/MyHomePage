@@ -12,6 +12,8 @@ export type SearchEngine = {
   template: string;
 };
 
+export type BookmarkLayoutMode = 'card' | 'compact';
+
 export type BackgroundConfig = {
   type: 'animated-gradient' | 'image' | 'solid';
   imageUrl?: string;
@@ -28,6 +30,8 @@ export type HomepageConfig = {
   pageSubtitle: string;
   browserTitle: string;
   weatherCity: string;
+  bookmarkLayoutMode: BookmarkLayoutMode;
+  bookmarkColumns: number;
   defaultSearchEngineId: string;
   searchEngines: SearchEngine[];
   bookmarks: Bookmark[];
@@ -75,6 +79,8 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   pageSubtitle: '简洁高效的个人起始页',
   browserTitle: 'HomePage',
   weatherCity: 'Shanghai',
+  bookmarkLayoutMode: 'card',
+  bookmarkColumns: 4,
   defaultSearchEngineId: 'google',
   searchEngines: DEFAULT_SEARCH_ENGINES,
   bookmarks: DEFAULT_BOOKMARKS,
@@ -190,6 +196,23 @@ function normalizeBackgroundConfig(value: unknown): BackgroundConfig {
   };
 }
 
+function normalizeBookmarkLayoutMode(value: unknown): BookmarkLayoutMode {
+  if (value === 'compact') {
+    return 'compact';
+  }
+
+  return 'card';
+}
+
+function normalizeBookmarkColumns(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_HOMEPAGE_CONFIG.bookmarkColumns;
+  }
+
+  return Math.max(1, Math.min(6, Math.round(parsed)));
+}
+
 export function normalizeHomepageConfig(value: unknown): HomepageConfig {
   if (!isRecord(value)) {
     return {
@@ -211,6 +234,8 @@ export function normalizeHomepageConfig(value: unknown): HomepageConfig {
     pageSubtitle: asString(value.pageSubtitle, DEFAULT_HOMEPAGE_CONFIG.pageSubtitle),
     browserTitle: asString(value.browserTitle, DEFAULT_HOMEPAGE_CONFIG.browserTitle),
     weatherCity: asString(value.weatherCity, DEFAULT_HOMEPAGE_CONFIG.weatherCity),
+    bookmarkLayoutMode: normalizeBookmarkLayoutMode(value.bookmarkLayoutMode),
+    bookmarkColumns: normalizeBookmarkColumns(value.bookmarkColumns),
     defaultSearchEngineId: hasDefault
       ? defaultSearchEngineId
       : searchEngines[0].id,

@@ -8,6 +8,7 @@ import {
   HomepageConfig,
   SearchEngine,
   BackgroundConfig,
+  BookmarkLayoutMode,
   DEFAULT_HOMEPAGE_CONFIG,
 } from '@/lib/homepage-config';
 import {
@@ -76,6 +77,12 @@ export default function SettingsDashboard() {
   const [pageSubtitleInput, setPageSubtitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.pageSubtitle);
   const [browserTitleInput, setBrowserTitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.browserTitle);
   const [cityInput, setCityInput] = useState(DEFAULT_HOMEPAGE_CONFIG.weatherCity);
+  const [bookmarkLayoutModeInput, setBookmarkLayoutModeInput] = useState<BookmarkLayoutMode>(
+    DEFAULT_HOMEPAGE_CONFIG.bookmarkLayoutMode
+  );
+  const [bookmarkColumnsInput, setBookmarkColumnsInput] = useState(
+    DEFAULT_HOMEPAGE_CONFIG.bookmarkColumns
+  );
 
   const [bookmarkForm, setBookmarkForm] = useState<BookmarkFormState>({
     id: '',
@@ -127,6 +134,8 @@ export default function SettingsDashboard() {
         setPageSubtitleInput(result.pageSubtitle);
         setBrowserTitleInput(result.browserTitle);
         setCityInput(result.weatherCity);
+        setBookmarkLayoutModeInput(result.bookmarkLayoutMode);
+        setBookmarkColumnsInput(result.bookmarkColumns);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '配置加载失败');
@@ -207,6 +216,14 @@ export default function SettingsDashboard() {
         pageSubtitleInput.trim() || DEFAULT_HOMEPAGE_CONFIG.pageSubtitle,
       browserTitle:
         browserTitleInput.trim() || DEFAULT_HOMEPAGE_CONFIG.browserTitle,
+    }));
+  };
+
+  const saveBookmarkLayoutFields = () => {
+    updateConfig((prev) => ({
+      ...prev,
+      bookmarkLayoutMode: bookmarkLayoutModeInput,
+      bookmarkColumns: Math.max(1, Math.min(6, Math.round(bookmarkColumnsInput))),
     }));
   };
 
@@ -445,16 +462,16 @@ export default function SettingsDashboard() {
   }
 
   return (
-    <section className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 lg:px-10">
-      <div className="pointer-events-none absolute -left-32 top-0 h-80 w-80 rounded-full bg-cyan-500/30 blur-3xl" />
-      <div className="pointer-events-none absolute -right-32 bottom-0 h-80 w-80 rounded-full bg-fuchsia-500/30 blur-3xl" />
+    <section className="relative min-h-screen overflow-hidden bg-slate-950 px-4 py-8 text-white sm:px-6 lg:px-10">
+      <div className="pointer-events-none absolute -left-32 top-0 h-80 w-80 rounded-full bg-white/10 blur-3xl" />
+      <div className="pointer-events-none absolute -right-32 bottom-0 h-80 w-80 rounded-full bg-white/5 blur-3xl" />
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
-        <header className="rounded-3xl border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur-md">
+        <header className="rounded-3xl border border-white/15 bg-slate-900/55 p-5 shadow-2xl backdrop-blur-md">
           <div className="flex items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">设置中心</h1>
-              <p className="mt-1 text-sm text-slate-200/90">主页保持简洁，所有配置在这里维护。</p>
+              <h1 className="text-shadow-title text-2xl font-semibold tracking-tight text-white sm:text-3xl">设置中心</h1>
+              <p className="text-shadow-soft mt-1 text-sm text-white/90">主页保持简洁，所有配置在这里维护。</p>
             </div>
 
             <Link
@@ -491,8 +508,8 @@ export default function SettingsDashboard() {
           ) : null}
         </header>
 
-        <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
-          <h2 className="text-base font-semibold">页面文案</h2>
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+          <h2 className="text-shadow-title text-base font-semibold text-white">页面文案</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input
               className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
@@ -521,8 +538,8 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
-          <h2 className="flex items-center gap-2 text-base font-semibold">
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+          <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <CloudSun className="h-4 w-4 text-cyan-300" />
             天气
           </h2>
@@ -542,8 +559,49 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
-          <h2 className="text-base font-semibold">背景设置</h2>
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+          <h2 className="text-shadow-title text-base font-semibold text-white">书签布局</h2>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-2">
+            <div>
+              <label className="mb-1 block text-xs text-slate-300">布局模式</label>
+              <select
+                className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+                value={bookmarkLayoutModeInput}
+                onChange={(event) =>
+                  setBookmarkLayoutModeInput(event.target.value as BookmarkLayoutMode)
+                }
+              >
+                <option value="card">卡片模式（图标在上）</option>
+                <option value="compact">紧凑模式（图标在左）</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-slate-300">
+                每行书签数量: {bookmarkColumnsInput}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="6"
+                value={bookmarkColumnsInput}
+                onChange={(event) => setBookmarkColumnsInput(Number(event.target.value))}
+                className="w-full"
+              />
+            </div>
+          </div>
+
+          <button
+            className="mt-3 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400"
+            onClick={saveBookmarkLayoutFields}
+          >
+            保存书签布局
+          </button>
+        </article>
+
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+          <h2 className="text-shadow-title text-base font-semibold text-white">背景设置</h2>
 
           <div className="mt-3">
             <label className="mb-1 block text-xs text-slate-300">背景类型</label>
@@ -682,8 +740,8 @@ export default function SettingsDashboard() {
           )}
         </article>
 
-        <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
-          <h2 className="flex items-center gap-2 text-base font-semibold">
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
+          <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <Search className="h-4 w-4 text-cyan-300" />
             搜索引擎
           </h2>
@@ -763,14 +821,14 @@ export default function SettingsDashboard() {
           </ul>
         </article>
 
-        <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
+        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-4 shadow-lg backdrop-blur">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-              <h2 className="flex items-center gap-2 text-base font-semibold">
+              <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
                 <Sparkles className="h-4 w-4 text-cyan-300" />
                 书签管理
               </h2>
-              <p className="mt-1 text-xs text-slate-300">
+              <p className="text-shadow-soft mt-1 text-xs text-white/85">
                 自动图标可一键刷新；勾选“自定义图标”后将跳过批量刷新。
               </p>
             </div>

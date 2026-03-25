@@ -7,6 +7,8 @@ const DEFAULT_CONFIG = {
   pageSubtitle: '简洁高效的个人起始页',
   browserTitle: 'HomePage',
   weatherCity: 'Shanghai',
+  bookmarkLayoutMode: 'card',
+  bookmarkColumns: 4,
   defaultSearchEngineId: 'google',
   searchEngines: [
     {
@@ -188,6 +190,24 @@ function normalizeBackgroundConfig(value) {
   };
 }
 
+function normalizeBookmarkLayoutMode(value) {
+  if (value === 'compact') {
+    return 'compact';
+  }
+
+  return 'card';
+}
+
+function normalizeBookmarkColumns(value) {
+  const parsed = Number(value);
+
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_CONFIG.bookmarkColumns;
+  }
+
+  return Math.max(1, Math.min(6, Math.round(parsed)));
+}
+
 function normalizeConfig(value) {
   if (!value || typeof value !== 'object') {
     return {
@@ -209,6 +229,8 @@ function normalizeConfig(value) {
     pageSubtitle: asString(value.pageSubtitle, DEFAULT_CONFIG.pageSubtitle),
     browserTitle: asString(value.browserTitle, DEFAULT_CONFIG.browserTitle),
     weatherCity: asString(value.weatherCity, DEFAULT_CONFIG.weatherCity),
+    bookmarkLayoutMode: normalizeBookmarkLayoutMode(value.bookmarkLayoutMode),
+    bookmarkColumns: normalizeBookmarkColumns(value.bookmarkColumns),
     defaultSearchEngineId: hasDefault
       ? defaultSearchEngineId
       : searchEngines[0].id,

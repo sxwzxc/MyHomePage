@@ -21,6 +21,34 @@
     text-wrap: balance;
   }
 
+  .text-shadow-title {
+    color: #ffffff;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+  }
+
+  .text-shadow-soft {
+    color: #ffffff;
+    text-shadow: 0 1px 6px rgba(0, 0, 0, 0.4);
+  }
+
+  .bookmark-grid {
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(var(--bookmark-cols-mobile, 1), minmax(0, 1fr));
+  }
+
+  @media (min-width: 640px) {
+    .bookmark-grid {
+      grid-template-columns: repeat(var(--bookmark-cols-sm, 2), minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .bookmark-grid {
+      grid-template-columns: repeat(var(--bookmark-cols-lg, 4), minmax(0, 1fr));
+    }
+  }
+
   .animation-delay-2000 {
     animation-delay: 2s;
   }
