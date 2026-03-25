@@ -3,8 +3,10 @@ const CONFIG_KEY = 'homepage:config:v1';
 const DEFAULT_CONFIG = {
   version: 1,
   updatedAt: new Date(0).toISOString(),
+  pageTitle: 'HomePage',
+  pageSubtitle: '简洁高效的个人起始页',
+  browserTitle: 'HomePage',
   weatherCity: 'Shanghai',
-  address: '中国 · 上海',
   defaultSearchEngineId: 'google',
   searchEngines: [
     {
@@ -38,6 +40,12 @@ const DEFAULT_CONFIG = {
     { id: 'bookmark-bilibili', title: 'Bilibili', url: 'https://www.bilibili.com' },
     { id: 'bookmark-zhihu', title: '知乎', url: 'https://www.zhihu.com' },
   ],
+  background: {
+    type: 'animated-gradient',
+    imageBlur: 5,
+    imageOpacity: 80,
+    gradientPreset: 'default',
+  },
 };
 
 function jsonResponse(data, status = 200) {
@@ -155,12 +163,38 @@ function normalizeBookmarks(value) {
   return bookmarks.length > 0 ? bookmarks : DEFAULT_CONFIG.bookmarks;
 }
 
+function normalizeBackgroundConfig(value) {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_CONFIG.background;
+  }
+
+  const type = ['animated-gradient', 'image', 'solid'].includes(String(value.type))
+    ? value.type
+    : 'animated-gradient';
+
+  return {
+    type,
+    imageUrl: asString(value.imageUrl),
+    imageBlur:
+      typeof value.imageBlur === 'number'
+        ? Math.max(0, Math.min(10, value.imageBlur))
+        : 5,
+    imageOpacity:
+      typeof value.imageOpacity === 'number'
+        ? Math.max(0, Math.min(100, value.imageOpacity))
+        : 80,
+    gradientPreset: asString(value.gradientPreset, 'default'),
+    solidColor: asString(value.solidColor),
+  };
+}
+
 function normalizeConfig(value) {
   if (!value || typeof value !== 'object') {
     return {
       ...DEFAULT_CONFIG,
       searchEngines: [...DEFAULT_CONFIG.searchEngines],
       bookmarks: [...DEFAULT_CONFIG.bookmarks],
+      background: { ...DEFAULT_CONFIG.background },
     };
   }
 
@@ -171,13 +205,16 @@ function normalizeConfig(value) {
   return {
     version: Number.isFinite(Number(value.version)) ? Number(value.version) : 1,
     updatedAt: asString(value.updatedAt, new Date().toISOString()),
+    pageTitle: asString(value.pageTitle, DEFAULT_CONFIG.pageTitle),
+    pageSubtitle: asString(value.pageSubtitle, DEFAULT_CONFIG.pageSubtitle),
+    browserTitle: asString(value.browserTitle, DEFAULT_CONFIG.browserTitle),
     weatherCity: asString(value.weatherCity, DEFAULT_CONFIG.weatherCity),
-    address: asString(value.address, DEFAULT_CONFIG.address),
     defaultSearchEngineId: hasDefault
       ? defaultSearchEngineId
       : searchEngines[0].id,
     searchEngines,
     bookmarks: normalizeBookmarks(value.bookmarks),
+    background: normalizeBackgroundConfig(value.background),
   };
 }
 

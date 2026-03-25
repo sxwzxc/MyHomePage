@@ -3,12 +3,12 @@
 import { BackgroundConfig } from '@/lib/homepage-config';
 
 const GRADIENT_PRESETS = {
-  default: 'from-cyan-500/30 via-purple-500/30 to-fuchsia-500/30',
-  ocean: 'from-blue-500/30 via-cyan-400/30 to-teal-500/30',
-  sunset: 'from-orange-500/30 via-pink-500/30 to-purple-600/30',
-  forest: 'from-green-500/30 via-emerald-400/30 to-teal-600/30',
-  aurora: 'from-indigo-500/30 via-purple-500/30 to-pink-500/30',
-  fire: 'from-red-500/30 via-orange-500/30 to-yellow-500/30',
+  default: 'from-cyan-500/45 via-indigo-500/35 to-fuchsia-500/45',
+  ocean: 'from-blue-500/45 via-cyan-400/35 to-teal-500/45',
+  sunset: 'from-orange-500/45 via-pink-500/35 to-purple-600/45',
+  forest: 'from-emerald-500/45 via-green-400/35 to-teal-600/45',
+  aurora: 'from-indigo-500/45 via-violet-500/35 to-pink-500/45',
+  fire: 'from-red-500/45 via-orange-500/35 to-amber-500/45',
 };
 
 interface AnimatedBackgroundProps {
@@ -51,10 +51,29 @@ export default function AnimatedBackground({ config }: AnimatedBackgroundProps) 
     <>
       <div className="fixed inset-0 -z-10 bg-slate-950" />
       <div
-        className={`fixed inset-0 -z-10 animate-gradient bg-gradient-to-br ${gradientClass}`}
+        className={`fixed inset-0 -z-10 animate-gradient bg-gradient-to-r ${gradientClass}`}
+        style={{
+          backgroundSize: '240% 240%',
+        }}
       />
-      <div className="pointer-events-none fixed -left-32 top-0 -z-10 h-80 w-80 animate-blob rounded-full bg-cyan-500/30 blur-3xl" />
-      <div className="animation-delay-2000 pointer-events-none fixed -right-32 bottom-0 -z-10 h-80 w-80 animate-blob rounded-full bg-fuchsia-500/30 blur-3xl" />
+      <div className="fixed inset-0 -z-10 bg-slate-950/25" />
+
+      <div
+        className="pointer-events-none fixed -left-36 top-[-5rem] -z-10 h-[26rem] w-[26rem] animate-blob rounded-full bg-cyan-500/35 blur-[120px]"
+        style={{ animationDuration: '30s' }}
+      />
+      <div
+        className="animation-delay-2000 pointer-events-none fixed right-[-7rem] top-[10%] -z-10 h-[22rem] w-[22rem] animate-blob rounded-full bg-indigo-500/30 blur-[120px]"
+        style={{ animationDuration: '36s' }}
+      />
+      <div
+        className="animation-delay-4000 pointer-events-none fixed left-[12%] bottom-[-8rem] -z-10 h-[25rem] w-[25rem] animate-blob rounded-full bg-fuchsia-500/30 blur-[120px]"
+        style={{ animationDuration: '34s' }}
+      />
+      <div
+        className="animation-delay-6000 pointer-events-none fixed bottom-[-10rem] right-[8%] -z-10 h-[24rem] w-[24rem] animate-blob rounded-full bg-teal-400/25 blur-[130px]"
+        style={{ animationDuration: '40s' }}
+      />
     </>
   );
 }

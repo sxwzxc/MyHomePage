@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2 } from 'lucide-react';
 import {
   Bookmark,
@@ -67,16 +66,16 @@ function BookmarkIconPreview({ bookmark }: { bookmark: Bookmark }) {
 }
 
 export default function SettingsDashboard() {
-  const searchParams = useSearchParams();
-
   const [config, setConfig] = useState<HomepageConfig>(DEFAULT_HOMEPAGE_CONFIG);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
+  const [pageTitleInput, setPageTitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.pageTitle);
+  const [pageSubtitleInput, setPageSubtitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.pageSubtitle);
+  const [browserTitleInput, setBrowserTitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.browserTitle);
   const [cityInput, setCityInput] = useState(DEFAULT_HOMEPAGE_CONFIG.weatherCity);
-  const [addressInput, setAddressInput] = useState(DEFAULT_HOMEPAGE_CONFIG.address);
 
   const [bookmarkForm, setBookmarkForm] = useState<BookmarkFormState>({
     id: '',
@@ -124,8 +123,10 @@ export default function SettingsDashboard() {
         }
 
         setConfig(result);
+        setPageTitleInput(result.pageTitle);
+        setPageSubtitleInput(result.pageSubtitle);
+        setBrowserTitleInput(result.browserTitle);
         setCityInput(result.weatherCity);
-        setAddressInput(result.address);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '配置加载失败');
@@ -143,27 +144,6 @@ export default function SettingsDashboard() {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    const editBookmark = searchParams.get('editBookmark');
-
-    if (!editBookmark || config.bookmarks.length === 0) {
-      return;
-    }
-
-    const target = config.bookmarks.find((bookmark) => bookmark.id === editBookmark);
-    if (!target) {
-      return;
-    }
-
-    setBookmarkForm({
-      id: target.id,
-      title: target.title,
-      url: target.url,
-      icon: target.icon || '',
-      isCustomIcon: isCustomIconBookmark(target),
-    });
-  }, [config.bookmarks, searchParams]);
 
   useEffect(() => {
     return () => {
@@ -212,11 +192,21 @@ export default function SettingsDashboard() {
     [persistConfig]
   );
 
-  const saveProfileFields = () => {
+  const saveWeatherFields = () => {
     updateConfig((prev) => ({
       ...prev,
       weatherCity: cityInput.trim() || prev.weatherCity,
-      address: addressInput.trim() || prev.address,
+    }));
+  };
+
+  const saveTitleFields = () => {
+    updateConfig((prev) => ({
+      ...prev,
+      pageTitle: pageTitleInput.trim() || DEFAULT_HOMEPAGE_CONFIG.pageTitle,
+      pageSubtitle:
+        pageSubtitleInput.trim() || DEFAULT_HOMEPAGE_CONFIG.pageSubtitle,
+      browserTitle:
+        browserTitleInput.trim() || DEFAULT_HOMEPAGE_CONFIG.browserTitle,
     }));
   };
 
@@ -502,29 +492,53 @@ export default function SettingsDashboard() {
         </header>
 
         <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
+          <h2 className="text-base font-semibold">页面文案</h2>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <input
+              className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+              value={pageTitleInput}
+              onChange={(event) => setPageTitleInput(event.target.value)}
+              placeholder="首页标题，如 HomePage"
+            />
+            <input
+              className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+              value={pageSubtitleInput}
+              onChange={(event) => setPageSubtitleInput(event.target.value)}
+              placeholder="副标题，如 简洁高效的个人起始页"
+            />
+            <input
+              className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+              value={browserTitleInput}
+              onChange={(event) => setBrowserTitleInput(event.target.value)}
+              placeholder="浏览器标题，如 HomePage"
+            />
+          </div>
+          <button
+            className="mt-3 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400"
+            onClick={saveTitleFields}
+          >
+            保存页面文案
+          </button>
+        </article>
+
+        <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
           <h2 className="flex items-center gap-2 text-base font-semibold">
             <CloudSun className="h-4 w-4 text-cyan-300" />
-            天气与地址
+            天气
           </h2>
-          <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <div className="mt-3 grid gap-3 md:grid-cols-1">
             <input
               className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
               value={cityInput}
               onChange={(event) => setCityInput(event.target.value)}
               placeholder="天气城市，如 Shanghai"
             />
-            <input
-              className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
-              value={addressInput}
-              onChange={(event) => setAddressInput(event.target.value)}
-              placeholder="地址描述，如 中国 · 上海"
-            />
           </div>
           <button
             className="mt-3 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400"
-            onClick={saveProfileFields}
+            onClick={saveWeatherFields}
           >
-            保存天气与地址
+            保存天气设置
           </button>
         </article>
 

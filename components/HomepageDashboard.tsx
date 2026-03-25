@@ -2,7 +2,18 @@
 
 import Link from 'next/link';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
-import { Pencil, Trash2, Plus, Settings, Search, ChevronDown, Bookmark as BookmarkIcon, MoreVertical } from 'lucide-react';
+import {
+  Pencil,
+  Trash2,
+  Plus,
+  Settings,
+  Search,
+  ChevronDown,
+  Bookmark as BookmarkIcon,
+  MoreVertical,
+  Loader2,
+  X,
+} from 'lucide-react';
 import { Bookmark, HomepageConfig, DEFAULT_HOMEPAGE_CONFIG } from '@/lib/homepage-config';
 import { getHomepageConfig, getVisitCount, saveHomepageConfig, fetchBookmarkFavicon } from '@/lib/utils';
 import ContextMenu, { ContextMenuItem } from '@/components/ui/context-menu';
@@ -13,6 +24,23 @@ type WeatherInfo = {
   temperature: number;
   weatherText: string;
 };
+
+type BookmarkEditFormState = {
+  id: string;
+  title: string;
+  url: string;
+  icon: string;
+  isCustomIcon: boolean;
+};
+
+function isCustomIconBookmark(bookmark: Bookmark): boolean {
+  if (bookmark.isCustomIcon) {
+    return true;
+  }
+
+  const icon = bookmark.icon?.trim() || '';
+  return Boolean(icon && !icon.startsWith('http') && !icon.startsWith('data:'));
+}
 
 function weatherCodeToText(code: number): string {
   const map: Record<number, string> = {
@@ -132,6 +160,17 @@ export default function HomepageDashboard() {
   const [quickAddForm, setQuickAddForm] = useState({ title: '', url: '' });
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editForm, setEditForm] = useState<BookmarkEditFormState>({
+    id: '',
+    title: '',
+    url: '',
+    icon: '',
+    isCustomIcon: false,
+  });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [isFetchingEditIcon, setIsFetchingEditIcon] = useState(false);
 
   const selectedEngine = useMemo(() => {
     return (
@@ -218,6 +257,15 @@ export default function HomepageDashboard() {
     };
   }, [config.weatherCity]);
 
+  useEffect(() => {
+    const nextTitle = config.browserTitle?.trim() || 'HomePage';
+    document.title = nextTitle;
+
+    return () => {
+      document.title = 'HomePage';
+    };
+  }, [config.browserTitle]);
+
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -233,20 +281,110 @@ export default function HomepageDashboard() {
     window.location.href = destination;
   };
 
+  const openBookmarkMenu = (bookmark: Bookmark, x: number, y: number) => {
+    setContextMenu({ bookmark, x, y });
+  };
+
   const handleBookmarkContextMenu = (
     event: React.MouseEvent<HTMLDivElement>,
     bookmark: Bookmark
   ) => {
     event.preventDefault();
-    setContextMenu({
-      bookmark,
-      x: event.clientX,
-      y: event.clientY,
-    });
+    openBookmarkMenu(bookmark, event.clientX, event.clientY);
+  };
+
+  const handleBookmarkMenuButtonClick = (
+    event: React.MouseEvent<HTMLButtonElement>,
+    bookmark: Bookmark
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const rect = event.currentTarget.getBoundingClientRect();
+    openBookmarkMenu(bookmark, rect.right - 8, rect.bottom + 6);
   };
 
   const handleEditBookmark = (bookmark: Bookmark) => {
-    window.location.href = `/settings?editBookmark=${encodeURIComponent(bookmark.id)}`;
+    setEditForm({
+      id: bookmark.id,
+      title: bookmark.title,
+      url: bookmark.url,
+      icon: bookmark.icon || '',
+      isCustomIcon: isCustomIconBookmark(bookmark),
+    });
+    setEditError(null);
+    setIsEditDialogOpen(true);
+  };
+
+  const handleEditBookmarkSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setEditError(null);
+
+    const title = editForm.title.trim();
+    const iconInput = editForm.icon.trim();
+
+    if (!title) {
+      setEditError('书签标题不能为空');
+      return;
+    }
+
+    let normalizedUrl = '';
+    try {
+      normalizedUrl = new URL(editForm.url.trim()).toString();
+    } catch {
+      setEditError('请输入合法的 URL');
+      return;
+    }
+
+    setIsSavingEdit(true);
+
+    let finalIcon = iconInput;
+    let finalIsCustomIcon = iconInput ? editForm.isCustomIcon : false;
+
+    if (!finalIcon) {
+      setIsFetchingEditIcon(true);
+      const fetchedIcon = await fetchBookmarkFavicon(normalizedUrl);
+      setIsFetchingEditIcon(false);
+
+      if (fetchedIcon) {
+        finalIcon = fetchedIcon;
+      }
+
+      finalIsCustomIcon = false;
+    }
+
+    try {
+      const nextConfig: HomepageConfig = {
+        ...config,
+        bookmarks: config.bookmarks.map((bookmark) =>
+          bookmark.id === editForm.id
+            ? {
+                ...bookmark,
+                title,
+                url: normalizedUrl,
+                icon: finalIcon || undefined,
+                isCustomIcon: finalIcon ? finalIsCustomIcon : false,
+              }
+            : bookmark
+        ),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const saved = await saveHomepageConfig(nextConfig);
+      setConfig(saved);
+      setIsEditDialogOpen(false);
+      setEditForm({
+        id: '',
+        title: '',
+        url: '',
+        icon: '',
+        isCustomIcon: false,
+      });
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : '保存失败');
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const handleDeleteBookmark = async (bookmark: Bookmark) => {
@@ -334,26 +472,35 @@ export default function HomepageDashboard() {
     <section className="relative min-h-screen overflow-hidden px-4 py-8 text-slate-100 sm:px-6 lg:px-10">
       <AnimatedBackground config={config.background} />
 
+      <Link
+        href="/settings"
+        className="fixed right-4 top-4 z-30 rounded-xl border border-white/20 bg-slate-900/70 p-2 text-slate-200 shadow-lg backdrop-blur transition hover:border-cyan-300/70 hover:text-white sm:right-6 sm:top-6"
+        title="设置"
+      >
+        <Settings className="h-5 w-5" />
+      </Link>
+
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="relative rounded-3xl border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur-md">
-          {/* Settings Icon - Absolute positioned */}
-          <Link
-            href="/settings"
-            className="absolute right-6 top-6 rounded-lg bg-white/10 p-2 text-slate-300 transition hover:bg-white/20 hover:text-white"
-            title="设置"
-          >
-            <Settings className="h-5 w-5" />
-          </Link>
-
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">
-                我的浏览器起始页
+                {config.pageTitle}
               </h1>
-              <p className="mt-1 text-sm text-slate-200/90">简洁高效的个人起始页</p>
+              <p className="mt-1 text-sm text-slate-200/90">{config.pageSubtitle}</p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-200/90">
+              <span className="rounded-full bg-black/30 px-3 py-1.5">
+                {weather
+                  ? `🌤 ${weather.cityName} · ${weather.weatherText} · ${weather.temperature.toFixed(1)}°C`
+                  : weatherError
+                    ? `🌤 ${weatherError}`
+                    : '🌤 天气加载中...'}
+              </span>
+              <span className="rounded-full bg-black/30 px-3 py-1.5">
+                👁️ 访问：{visitCount ?? '-'}
+              </span>
               <div className="rounded-2xl bg-black/25 px-4 py-3 text-sm">
                 <p>{now.toLocaleDateString('zh-CN', { weekday: 'long' })}</p>
                 <p className="text-lg font-semibold">
@@ -361,23 +508,6 @@ export default function HomepageDashboard() {
                 </p>
               </div>
             </div>
-          </div>
-
-          <div className="mt-4 grid gap-2 text-xs text-slate-300 sm:grid-cols-2">
-            <p>📍 地址：{config.address || '未设置'}</p>
-            <p>👁️ 访问：{visitCount ?? '-'}</p>
-          </div>
-
-          <div className="mt-3 text-xs text-slate-300">
-            {weather ? (
-              <p>
-                🌤 {weather.cityName} · {weather.weatherText} · {weather.temperature.toFixed(1)}°C
-              </p>
-            ) : weatherError ? (
-              <p className="text-amber-200">天气：{weatherError}</p>
-            ) : (
-              <p>天气加载中...</p>
-            )}
           </div>
 
           {loadError ? (
@@ -521,10 +651,14 @@ export default function HomepageDashboard() {
                   </p>
                 </a>
 
-                {/* Quick action hint */}
-                <div className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100">
-                  <MoreVertical className="h-4 w-4 text-slate-400" />
-                </div>
+                <button
+                  type="button"
+                  className="absolute right-2 top-2 rounded-md p-1 text-slate-400 opacity-0 transition hover:bg-white/10 hover:text-slate-100 group-hover:opacity-100"
+                  onClick={(event) => handleBookmarkMenuButtonClick(event, bookmark)}
+                  aria-label="打开书签菜单"
+                >
+                  <MoreVertical className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>
@@ -550,6 +684,100 @@ export default function HomepageDashboard() {
             onClose={() => setContextMenu(null)}
           />
         )}
+
+        {isEditDialogOpen ? (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-lg rounded-2xl border border-white/20 bg-slate-900/95 p-5 shadow-2xl">
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-100">编辑书签</h3>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isSavingEdit) {
+                      return;
+                    }
+                    setIsEditDialogOpen(false);
+                  }}
+                  className="rounded-md p-1 text-slate-400 transition hover:bg-white/10 hover:text-slate-100"
+                  aria-label="关闭编辑弹窗"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form className="space-y-3" onSubmit={handleEditBookmarkSubmit}>
+                <input
+                  className="w-full rounded-lg border border-white/20 bg-slate-800/80 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+                  placeholder="书签标题"
+                  value={editForm.title}
+                  onChange={(event) =>
+                    setEditForm((prev) => ({ ...prev, title: event.target.value }))
+                  }
+                />
+
+                <input
+                  className="w-full rounded-lg border border-white/20 bg-slate-800/80 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+                  placeholder="URL，例如 https://example.com"
+                  value={editForm.url}
+                  onChange={(event) =>
+                    setEditForm((prev) => ({ ...prev, url: event.target.value }))
+                  }
+                />
+
+                <input
+                  className="w-full rounded-lg border border-white/20 bg-slate-800/80 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+                  placeholder="图标（可空，自动抓取）"
+                  value={editForm.icon}
+                  onChange={(event) => {
+                    const nextIcon = event.target.value;
+                    setEditForm((prev) => ({
+                      ...prev,
+                      icon: nextIcon,
+                      isCustomIcon: nextIcon.trim()
+                        ? prev.icon.trim()
+                          ? prev.isCustomIcon
+                          : true
+                        : false,
+                    }));
+                  }}
+                />
+
+                <label className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-slate-800/70 px-3 py-2 text-xs text-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={editForm.isCustomIcon}
+                    disabled={!editForm.icon.trim()}
+                    onChange={(event) =>
+                      setEditForm((prev) => ({ ...prev, isCustomIcon: event.target.checked }))
+                    }
+                  />
+                  自定义图标（批量刷新自动图标时会跳过）
+                </label>
+
+                {editError ? <p className="text-sm text-amber-200">{editError}</p> : null}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditDialogOpen(false)}
+                    disabled={isSavingEdit}
+                    className="rounded-lg bg-white/10 px-3 py-2 text-sm text-slate-100 transition hover:bg-white/20 disabled:opacity-60"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingEdit}
+                    className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400 disabled:opacity-70"
+                  >
+                    {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {isFetchingEditIcon ? '抓取图标中...' : isSavingEdit ? '保存中...' : '保存修改'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) : null}
       </div>
     </section>
   );

@@ -24,8 +24,10 @@ export type BackgroundConfig = {
 export type HomepageConfig = {
   version: number;
   updatedAt: string;
+  pageTitle: string;
+  pageSubtitle: string;
+  browserTitle: string;
   weatherCity: string;
-  address: string;
   defaultSearchEngineId: string;
   searchEngines: SearchEngine[];
   bookmarks: Bookmark[];
@@ -69,8 +71,10 @@ export const DEFAULT_BOOKMARKS: Bookmark[] = [
 export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   version: 1,
   updatedAt: new Date(0).toISOString(),
+  pageTitle: 'HomePage',
+  pageSubtitle: '简洁高效的个人起始页',
+  browserTitle: 'HomePage',
   weatherCity: 'Shanghai',
-  address: '中国 · 上海',
   defaultSearchEngineId: 'google',
   searchEngines: DEFAULT_SEARCH_ENGINES,
   bookmarks: DEFAULT_BOOKMARKS,
@@ -203,8 +207,10 @@ export function normalizeHomepageConfig(value: unknown): HomepageConfig {
   return {
     version: Number.isFinite(Number(value.version)) ? Number(value.version) : 1,
     updatedAt: asString(value.updatedAt, new Date().toISOString()),
+    pageTitle: asString(value.pageTitle, DEFAULT_HOMEPAGE_CONFIG.pageTitle),
+    pageSubtitle: asString(value.pageSubtitle, DEFAULT_HOMEPAGE_CONFIG.pageSubtitle),
+    browserTitle: asString(value.browserTitle, DEFAULT_HOMEPAGE_CONFIG.browserTitle),
     weatherCity: asString(value.weatherCity, DEFAULT_HOMEPAGE_CONFIG.weatherCity),
-    address: asString(value.address, DEFAULT_HOMEPAGE_CONFIG.address),
     defaultSearchEngineId: hasDefault
       ? defaultSearchEngineId
       : searchEngines[0].id,

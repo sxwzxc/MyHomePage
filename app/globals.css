@@ -29,41 +29,46 @@
     animation-delay: 4s;
   }
 
+  .animation-delay-6000 {
+    animation-delay: 6s;
+  }
+
   @keyframes gradient {
-    0%,
+    0% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
     100% {
-      transform: translateY(0) translateX(0) scale(1);
-    }
-    33% {
-      transform: translateY(-20px) translateX(20px) scale(1.1);
-    }
-    66% {
-      transform: translateY(20px) translateX(-20px) scale(0.9);
+      background-position: 0% 50%;
     }
   }
 
   @keyframes blob {
-    0%,
-    100% {
+    0% {
       transform: translate(0, 0) scale(1);
     }
-    25% {
-      transform: translate(20px, -20px) scale(1.1);
+    20% {
+      transform: translate(40px, -24px) scale(1.22);
     }
-    50% {
-      transform: translate(-20px, 20px) scale(0.9);
+    45% {
+      transform: translate(-28px, 32px) scale(0.82);
     }
-    75% {
-      transform: translate(20px, 20px) scale(1.05);
+    70% {
+      transform: translate(30px, 18px) scale(1.12);
+    }
+    100% {
+      transform: translate(0, 0) scale(1);
     }
   }
 
   .animate-gradient {
-    animation: gradient 15s ease-in-out infinite;
+    animation: gradient 28s ease-in-out infinite;
   }
 
   .animate-blob {
-    animation: blob 20s ease-in-out infinite;
+    animation: blob 34s ease-in-out infinite;
   }
 }
 
