@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { CSSProperties, FormEvent, useEffect, useMemo, useState } from 'react';
+import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pencil,
   Trash2,
@@ -160,6 +160,7 @@ export default function HomepageDashboard() {
   const [quickAddForm, setQuickAddForm] = useState({ title: '', url: '' });
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
+  const [isSettingHomepage, setIsSettingHomepage] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<BookmarkEditFormState>({
     id: '',
@@ -171,6 +172,7 @@ export default function HomepageDashboard() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isFetchingEditIcon, setIsFetchingEditIcon] = useState(false);
+  const autoFaviconRefreshRunningRef = useRef(false);
 
   const selectedEngine = useMemo(() => {
     return (
@@ -196,6 +198,16 @@ export default function HomepageDashboard() {
     '--bookmark-cols-sm': String(tabletColumns),
     '--bookmark-cols-lg': String(desktopColumns),
   } as unknown as CSSProperties;
+  const bookmarkTitleClass =
+    desiredColumns >= 6
+      ? 'text-[12px]'
+      : desiredColumns >= 5
+        ? 'text-[13px]'
+        : desiredColumns >= 4
+          ? 'text-sm'
+          : 'text-base';
+  const bookmarkMetaClass =
+    desiredColumns >= 5 ? 'text-[11px]' : 'text-xs';
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -283,6 +295,137 @@ export default function HomepageDashboard() {
       document.title = 'HomePage';
     };
   }, [config.browserTitle]);
+
+  useEffect(() => {
+    if (isLoading || autoFaviconRefreshRunningRef.current) {
+      return;
+    }
+
+    if (!config.faviconAutoRefreshEnabled) {
+      return;
+    }
+
+    const intervalMinutes = Math.max(
+      1,
+      Math.round(config.faviconAutoRefreshMinutes || 60)
+    );
+    const lastRefreshTimestamp = Date.parse(
+      config.faviconLastRefreshAt || new Date(0).toISOString()
+    );
+    const elapsed = Date.now() - (Number.isFinite(lastRefreshTimestamp) ? lastRefreshTimestamp : 0);
+
+    if (elapsed < intervalMinutes * 60 * 1000) {
+      return;
+    }
+
+    autoFaviconRefreshRunningRef.current = true;
+
+    void (async () => {
+      try {
+        const refreshedBookmarks = await Promise.all(
+          config.bookmarks.map(async (bookmark) => {
+            if (isCustomIconBookmark(bookmark)) {
+              return bookmark;
+            }
+
+            const fetchedIcon = await fetchBookmarkFavicon(bookmark.url);
+            if (!fetchedIcon) {
+              return bookmark;
+            }
+
+            return {
+              ...bookmark,
+              icon: fetchedIcon,
+              isCustomIcon: false,
+            };
+          })
+        );
+
+        const nextConfig: HomepageConfig = {
+          ...config,
+          bookmarks: refreshedBookmarks,
+          faviconLastRefreshAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        const saved = await saveHomepageConfig(nextConfig);
+        setConfig(saved);
+      } catch {
+        // Ignore background refresh errors to avoid interrupting normal browsing.
+      } finally {
+        autoFaviconRefreshRunningRef.current = false;
+      }
+    })();
+  }, [
+    config,
+    isLoading,
+    autoFaviconRefreshRunningRef,
+  ]);
+
+  const markHomepageConfigured = async () => {
+    const nextConfig: HomepageConfig = {
+      ...config,
+      homepageConfigured: true,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const saved = await saveHomepageConfig(nextConfig);
+    setConfig(saved);
+  };
+
+  const handleSetHomepage = async () => {
+    if (isSettingHomepage) {
+      return;
+    }
+
+    setIsSettingHomepage(true);
+    const currentUrl = window.location.href;
+    let autoSuccess = false;
+
+    try {
+      const body = document.body as unknown as {
+        style?: { behavior?: string };
+        setHomePage?: (url: string) => void;
+      };
+
+      if (body?.style) {
+        body.style.behavior = 'url(#default#homepage)';
+      }
+
+      if (typeof body?.setHomePage === 'function') {
+        body.setHomePage(currentUrl);
+        autoSuccess = true;
+      }
+    } catch {
+      autoSuccess = false;
+    }
+
+    if (autoSuccess) {
+      try {
+        await markHomepageConfigured();
+        alert('已尝试将当前页面设为主页。');
+      } catch (error) {
+        alert(`已执行设为主页，但同步状态失败：${error instanceof Error ? error.message : '未知错误'}`);
+      } finally {
+        setIsSettingHomepage(false);
+      }
+      return;
+    }
+
+    const manualDone = window.confirm(
+      `自动设为主页失败（多数现代浏览器限制此能力）。\n\n请在浏览器设置中将当前网址设为主页：\n${currentUrl}\n\n完成后点击“确定”，我将不再提示。`
+    );
+
+    if (manualDone) {
+      try {
+        await markHomepageConfigured();
+      } catch (error) {
+        alert(`状态保存失败：${error instanceof Error ? error.message : '未知错误'}`);
+      }
+    }
+
+    setIsSettingHomepage(false);
+  };
 
   const handleSearch = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -442,36 +585,61 @@ export default function HomepageDashboard() {
     }
 
     setIsAddingBookmark(true);
+    const newBookmarkId = `bookmark_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const newBookmark: Bookmark = {
+      id: newBookmarkId,
+      title,
+      url: normalizedUrl,
+      icon: undefined,
+      isCustomIcon: false,
+    };
+
+    const optimisticConfig: HomepageConfig = {
+      ...config,
+      bookmarks: [...config.bookmarks, newBookmark],
+      updatedAt: new Date().toISOString(),
+    };
+
+    setConfig(optimisticConfig);
+    setQuickAddForm({ title: '', url: '' });
+    setShowQuickAdd(false);
+    setIsAddingBookmark(false);
+
     try {
-      // Fetch favicon
-      const favicon = await fetchBookmarkFavicon(normalizedUrl).catch(() => null);
+      const savedConfig = await saveHomepageConfig(optimisticConfig);
+      setConfig(savedConfig);
 
-      // Create new bookmark
-      const newBookmark: Bookmark = {
-        id: `bookmark_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        title,
-        url: normalizedUrl,
-        icon: favicon || undefined,
-        isCustomIcon: false,
-      };
+      void (async () => {
+        const fetchedIcon = await fetchBookmarkFavicon(normalizedUrl);
+        if (!fetchedIcon) {
+          return;
+        }
 
-      // Save to config
-      const nextConfig = {
-        ...config,
-        bookmarks: [...config.bookmarks, newBookmark],
-        updatedAt: new Date().toISOString(),
-      };
+        try {
+          const withIconConfig: HomepageConfig = {
+            ...savedConfig,
+            bookmarks: savedConfig.bookmarks.map((bookmark) =>
+              bookmark.id === newBookmarkId
+                ? {
+                    ...bookmark,
+                    icon: fetchedIcon,
+                    isCustomIcon: false,
+                  }
+                : bookmark
+            ),
+            updatedAt: new Date().toISOString(),
+          };
 
-      await saveHomepageConfig(nextConfig);
-      setConfig(nextConfig);
-
-      // Reset form
-      setQuickAddForm({ title: '', url: '' });
-      setShowQuickAdd(false);
+          const iconSaved = await saveHomepageConfig(withIconConfig);
+          setConfig(iconSaved);
+        } catch {
+          // Keep initial letter fallback when icon sync fails.
+        }
+      })();
     } catch (error) {
-      setQuickAddError(error instanceof Error ? error.message : '添加失败');
-    } finally {
-      setIsAddingBookmark(false);
+      setQuickAddError(
+        `已添加到当前页面，但同步失败：${error instanceof Error ? error.message : '未知错误'}`
+      );
     }
   };
 
@@ -490,13 +658,26 @@ export default function HomepageDashboard() {
     <section className="relative min-h-screen overflow-hidden px-4 py-8 text-white sm:px-6 lg:px-10">
       <AnimatedBackground config={config.background} />
 
-      <Link
-        href="/settings"
-        className="fixed right-4 top-4 z-30 rounded-xl border border-white/20 bg-slate-950/70 p-2 text-white shadow-lg backdrop-blur transition hover:border-white/60 hover:bg-slate-900/80 sm:right-6 sm:top-6"
-        title="设置"
-      >
-        <Settings className="h-5 w-5" />
-      </Link>
+      <div className="fixed right-4 top-4 z-30 flex items-center gap-2 sm:right-6 sm:top-6">
+        {!config.homepageConfigured ? (
+          <button
+            type="button"
+            onClick={handleSetHomepage}
+            disabled={isSettingHomepage}
+            className="text-shadow-soft rounded-xl border border-white/20 bg-slate-950/75 px-3 py-2 text-xs text-white shadow-lg backdrop-blur transition hover:border-white/60 hover:bg-slate-900/85 disabled:opacity-60"
+          >
+            {isSettingHomepage ? '设置中...' : '设为主页'}
+          </button>
+        ) : null}
+
+        <Link
+          href="/settings"
+          className="rounded-xl border border-white/20 bg-slate-950/70 p-2 text-white shadow-lg backdrop-blur transition hover:border-white/60 hover:bg-slate-900/80"
+          title="设置"
+        >
+          <Settings className="h-5 w-5" />
+        </Link>
+      </div>
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="relative rounded-3xl border border-white/15 bg-slate-900/50 p-5 shadow-2xl backdrop-blur-md">
@@ -613,10 +794,10 @@ export default function HomepageDashboard() {
                     <BookmarkAvatar bookmark={bookmark} />
                   </div>
                   <div className={isCompactMode ? 'min-w-0 flex-1' : ''}>
-                    <h3 className="text-shadow-soft truncate font-medium text-white">
+                    <h3 className={`text-shadow-soft truncate font-medium text-white ${bookmarkTitleClass}`}>
                       {bookmark.title}
                     </h3>
-                    <p className="truncate text-xs text-white/70">
+                    <p className={`truncate text-white/70 ${bookmarkMetaClass}`}>
                       {new URL(bookmark.url).hostname}
                     </p>
                   </div>
@@ -684,15 +865,17 @@ export default function HomepageDashboard() {
               <button
                 onClick={() => setShowQuickAdd(true)}
                 className={`group rounded-xl border border-dashed border-white/35 bg-slate-950/45 transition hover:border-white/65 hover:bg-slate-900/65 ${
-                  isCompactMode ? 'flex items-center gap-3 p-3 text-left' : 'p-3'
+                  isCompactMode
+                    ? 'flex items-center gap-3 p-3 text-left'
+                    : 'flex flex-col items-center justify-center gap-2 p-3 text-center'
                 }`}
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 text-white/90 transition group-hover:bg-white/20">
                   <Plus className="h-6 w-6" />
                 </div>
                 <div className={isCompactMode ? 'min-w-0 flex-1' : ''}>
-                  <h3 className="text-shadow-soft font-medium text-white">添加书签</h3>
-                  <p className="text-xs text-white/75">快速添加新书签</p>
+                  <h3 className={`text-shadow-soft font-medium text-white ${bookmarkTitleClass}`}>添加书签</h3>
+                  <p className={`text-white/75 ${bookmarkMetaClass}`}>快速添加新书签</p>
                 </div>
               </button>
             )}

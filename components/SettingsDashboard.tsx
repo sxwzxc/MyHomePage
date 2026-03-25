@@ -83,6 +83,11 @@ export default function SettingsDashboard() {
   const [bookmarkColumnsInput, setBookmarkColumnsInput] = useState(
     DEFAULT_HOMEPAGE_CONFIG.bookmarkColumns
   );
+  const [faviconAutoRefreshEnabledInput, setFaviconAutoRefreshEnabledInput] =
+    useState(DEFAULT_HOMEPAGE_CONFIG.faviconAutoRefreshEnabled);
+  const [faviconAutoRefreshMinutesInput, setFaviconAutoRefreshMinutesInput] = useState(
+    DEFAULT_HOMEPAGE_CONFIG.faviconAutoRefreshMinutes
+  );
 
   const [bookmarkForm, setBookmarkForm] = useState<BookmarkFormState>({
     id: '',
@@ -136,6 +141,8 @@ export default function SettingsDashboard() {
         setCityInput(result.weatherCity);
         setBookmarkLayoutModeInput(result.bookmarkLayoutMode);
         setBookmarkColumnsInput(result.bookmarkColumns);
+        setFaviconAutoRefreshEnabledInput(result.faviconAutoRefreshEnabled);
+        setFaviconAutoRefreshMinutesInput(result.faviconAutoRefreshMinutes);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '配置加载失败');
@@ -224,6 +231,11 @@ export default function SettingsDashboard() {
       ...prev,
       bookmarkLayoutMode: bookmarkLayoutModeInput,
       bookmarkColumns: Math.max(1, Math.min(6, Math.round(bookmarkColumnsInput))),
+      faviconAutoRefreshEnabled: faviconAutoRefreshEnabledInput,
+      faviconAutoRefreshMinutes: Math.max(
+        1,
+        Math.min(1440, Math.round(faviconAutoRefreshMinutesInput))
+      ),
     }));
   };
 
@@ -590,7 +602,32 @@ export default function SettingsDashboard() {
                 className="w-full"
               />
             </div>
+
+            <div>
+              <label className="mb-1 block text-xs text-slate-300">
+                自动刷新图标间隔（分钟）: {faviconAutoRefreshMinutesInput}
+              </label>
+              <input
+                type="range"
+                min="1"
+                max="1440"
+                value={faviconAutoRefreshMinutesInput}
+                onChange={(event) =>
+                  setFaviconAutoRefreshMinutesInput(Number(event.target.value))
+                }
+                className="w-full"
+              />
+            </div>
           </div>
+
+          <label className="mt-2 inline-flex items-center gap-2 rounded-lg border border-white/15 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
+            <input
+              type="checkbox"
+              checked={faviconAutoRefreshEnabledInput}
+              onChange={(event) => setFaviconAutoRefreshEnabledInput(event.target.checked)}
+            />
+            启用“访问页面时按间隔自动刷新书签图标”
+          </label>
 
           <button
             className="mt-3 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400"

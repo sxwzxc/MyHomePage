@@ -29,9 +29,13 @@ export type HomepageConfig = {
   pageTitle: string;
   pageSubtitle: string;
   browserTitle: string;
+  homepageConfigured: boolean;
   weatherCity: string;
   bookmarkLayoutMode: BookmarkLayoutMode;
   bookmarkColumns: number;
+  faviconAutoRefreshEnabled: boolean;
+  faviconAutoRefreshMinutes: number;
+  faviconLastRefreshAt: string;
   defaultSearchEngineId: string;
   searchEngines: SearchEngine[];
   bookmarks: Bookmark[];
@@ -62,6 +66,9 @@ export const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
 ];
 
 export const DEFAULT_BOOKMARKS: Bookmark[] = [
+  { id: 'bookmark-baidu', title: '百度', url: 'https://www.baidu.com' },
+  { id: 'bookmark-taobao', title: '淘宝', url: 'https://www.taobao.com' },
+  { id: 'bookmark-jd', title: '京东', url: 'https://www.jd.com' },
   { id: 'bookmark-github', title: 'GitHub', url: 'https://github.com' },
   {
     id: 'bookmark-edgeone',
@@ -78,9 +85,13 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   pageTitle: 'HomePage',
   pageSubtitle: '简洁高效的个人起始页',
   browserTitle: 'HomePage',
+  homepageConfigured: false,
   weatherCity: 'Shanghai',
   bookmarkLayoutMode: 'card',
   bookmarkColumns: 4,
+  faviconAutoRefreshEnabled: true,
+  faviconAutoRefreshMinutes: 60,
+  faviconLastRefreshAt: new Date(0).toISOString(),
   defaultSearchEngineId: 'google',
   searchEngines: DEFAULT_SEARCH_ENGINES,
   bookmarks: DEFAULT_BOOKMARKS,
@@ -213,6 +224,15 @@ function normalizeBookmarkColumns(value: unknown): number {
   return Math.max(1, Math.min(6, Math.round(parsed)));
 }
 
+function normalizeFaviconRefreshMinutes(value: unknown): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_HOMEPAGE_CONFIG.faviconAutoRefreshMinutes;
+  }
+
+  return Math.max(1, Math.min(1440, Math.round(parsed)));
+}
+
 export function normalizeHomepageConfig(value: unknown): HomepageConfig {
   if (!isRecord(value)) {
     return {
@@ -233,9 +253,24 @@ export function normalizeHomepageConfig(value: unknown): HomepageConfig {
     pageTitle: asString(value.pageTitle, DEFAULT_HOMEPAGE_CONFIG.pageTitle),
     pageSubtitle: asString(value.pageSubtitle, DEFAULT_HOMEPAGE_CONFIG.pageSubtitle),
     browserTitle: asString(value.browserTitle, DEFAULT_HOMEPAGE_CONFIG.browserTitle),
+    homepageConfigured:
+      typeof value.homepageConfigured === 'boolean'
+        ? value.homepageConfigured
+        : DEFAULT_HOMEPAGE_CONFIG.homepageConfigured,
     weatherCity: asString(value.weatherCity, DEFAULT_HOMEPAGE_CONFIG.weatherCity),
     bookmarkLayoutMode: normalizeBookmarkLayoutMode(value.bookmarkLayoutMode),
     bookmarkColumns: normalizeBookmarkColumns(value.bookmarkColumns),
+    faviconAutoRefreshEnabled:
+      typeof value.faviconAutoRefreshEnabled === 'boolean'
+        ? value.faviconAutoRefreshEnabled
+        : DEFAULT_HOMEPAGE_CONFIG.faviconAutoRefreshEnabled,
+    faviconAutoRefreshMinutes: normalizeFaviconRefreshMinutes(
+      value.faviconAutoRefreshMinutes
+    ),
+    faviconLastRefreshAt: asString(
+      value.faviconLastRefreshAt,
+      DEFAULT_HOMEPAGE_CONFIG.faviconLastRefreshAt
+    ),
     defaultSearchEngineId: hasDefault
       ? defaultSearchEngineId
       : searchEngines[0].id,
