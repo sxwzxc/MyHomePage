@@ -16,11 +16,16 @@ function getFunctionsHost() {
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const host = getFunctionsHost();
+  const method = init?.method ?? 'GET';
+  const hasBody = typeof init?.body !== 'undefined';
+
   const res = await fetch(`${host}${path}`, {
     ...init,
     headers: {
-      'content-type': 'application/json',
       ...(init?.headers ?? {}),
+      ...(hasBody || method !== 'GET'
+        ? { 'content-type': 'application/json' }
+        : {}),
     },
   });
 

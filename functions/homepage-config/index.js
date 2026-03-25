@@ -52,9 +52,17 @@ function jsonResponse(data, status = 200) {
   });
 }
 
-function getKvBinding() {
+function getKvBinding(env) {
+  if (env && env.myhomepage) {
+    return env.myhomepage;
+  }
+
   if (typeof myhomepage !== 'undefined') {
     return myhomepage;
+  }
+
+  if (env && env.my_kv) {
+    return env.my_kv;
   }
 
   if (typeof my_kv !== 'undefined') {
@@ -165,61 +173,40 @@ function normalizeConfig(value) {
   };
 }
 
-export async function onRequest({ request }) {
-  if (request.method === 'OPTIONS') {
-    return jsonResponse({ ok: true });
-  }
-
-  const kv = getKvBinding();
+async function handleGet({ env }) {
+  const kv = getKvBinding(env);
 
   if (!kv) {
     return jsonResponse(
       {
         error:
-          "KV namespace binding not found. Please bind namespace 'myhomepage' (or fallback 'my_kv').",
+          "KV namespace binding not found. Please bind namespace 'myhomepage' (fallback: 'my_kv').",
       },
       500
     );
   }
 
   try {
-    if (request.method === 'GET') {
-      const raw = await kv.get(CONFIG_KEY);
-      if (!raw) {
-        const initial = {
-          ...DEFAULT_CONFIG,
-          searchEngines: [...DEFAULT_CONFIG.searchEngines],
-          bookmarks: [...DEFAULT_CONFIG.bookmarks],
-          updatedAt: new Date().toISOString(),
-        };
-        await kv.put(CONFIG_KEY, JSON.stringify(initial));
-        return jsonResponse(initial);
-      }
-
-      let parsed;
-      try {
-        parsed = JSON.parse(raw);
-      } catch {
-        parsed = DEFAULT_CONFIG;
-      }
-
-      return jsonResponse(normalizeConfig(parsed));
-    }
-
-    if (request.method === 'POST') {
-      const body = await request.json();
-      const normalized = normalizeConfig(body);
-      const nextConfig = {
-        ...normalized,
-        version: normalized.version + 1,
+    const raw = await kv.get(CONFIG_KEY);
+    if (!raw) {
+      const initial = {
+        ...DEFAULT_CONFIG,
+        searchEngines: [...DEFAULT_CONFIG.searchEngines],
+        bookmarks: [...DEFAULT_CONFIG.bookmarks],
         updatedAt: new Date().toISOString(),
       };
-
-      await kv.put(CONFIG_KEY, JSON.stringify(nextConfig));
-      return jsonResponse(nextConfig);
+      await kv.put(CONFIG_KEY, JSON.stringify(initial));
+      return jsonResponse(initial);
     }
 
-    return jsonResponse({ error: 'Method not allowed' }, 405);
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      parsed = DEFAULT_CONFIG;
+    }
+
+    return jsonResponse(normalizeConfig(parsed));
   } catch (err) {
     return jsonResponse(
       {
@@ -228,4 +215,68 @@ export async function onRequest({ request }) {
       500
     );
   }
+}
+
+async function handlePost({ request, env }) {
+  const kv = getKvBinding(env);
+
+  if (!kv) {
+    return jsonResponse(
+      {
+        error:
+          "KV namespace binding not found. Please bind namespace 'myhomepage' (fallback: 'my_kv').",
+      },
+      500
+    );
+  }
+
+  try {
+    const body = await request.json();
+    const normalized = normalizeConfig(body);
+    const nextConfig = {
+      ...normalized,
+      version: normalized.version + 1,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await kv.put(CONFIG_KEY, JSON.stringify(nextConfig));
+    return jsonResponse(nextConfig);
+  } catch (err) {
+    return jsonResponse(
+      {
+        error: err && err.message ? err.message : String(err),
+      },
+      500
+    );
+  }
+}
+
+export async function onRequestOptions() {
+  return jsonResponse({ ok: true });
+}
+
+export async function onRequestGet(context) {
+  return handleGet(context);
+}
+
+export async function onRequestPost(context) {
+  return handlePost(context);
+}
+
+export async function onRequest(context) {
+  const { request } = context;
+
+  if (request.method === 'OPTIONS') {
+    return onRequestOptions(context);
+  }
+
+  if (request.method === 'GET') {
+    return handleGet(context);
+  }
+
+  if (request.method === 'POST') {
+    return handlePost(context);
+  }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405);
 }
