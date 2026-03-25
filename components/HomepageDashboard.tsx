@@ -9,7 +9,6 @@ import {
   Settings,
   Search,
   ChevronDown,
-  Clock3,
   Bookmark as BookmarkIcon,
   MoreVertical,
   Loader2,
@@ -26,6 +25,7 @@ import {
 import { isSettingsUnlocked, saveSettingsUnlock } from '@/lib/unlock-state';
 import ContextMenu from '@/components/ui/context-menu';
 import AnimatedBackground from '@/components/AnimatedBackground';
+import AnalogClock from '@/components/AnalogClock';
 
 type WeatherInfo = {
   cityName: string;
@@ -896,7 +896,7 @@ export default function HomepageDashboard() {
                     </p>
                   </div>
                   <div className="rounded-full border border-white/20 bg-white/10 p-2 text-white/90">
-                    <Clock3 className="h-5 w-5" />
+                    <AnalogClock time={now} size={40} />
                   </div>
                 </div>
               </div>
