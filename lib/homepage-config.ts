@@ -23,6 +23,11 @@ export type BackgroundConfig = {
   solidColor?: string;
 };
 
+export type NewsConfig = {
+  enabled: boolean;
+  collapsed: boolean;
+};
+
 export type HomepageConfig = {
   version: number;
   updatedAt: string;
@@ -40,6 +45,7 @@ export type HomepageConfig = {
   searchEngines: SearchEngine[];
   bookmarks: Bookmark[];
   background: BackgroundConfig;
+  news: NewsConfig;
 };
 
 export const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
@@ -100,6 +106,10 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
     imageBlur: 5,
     imageOpacity: 80,
     gradientPreset: 'default',
+  },
+  news: {
+    enabled: true,
+    collapsed: false,
   },
 };
 
@@ -207,6 +217,17 @@ function normalizeBackgroundConfig(value: unknown): BackgroundConfig {
   };
 }
 
+function normalizeNewsConfig(value: unknown): NewsConfig {
+  if (!isRecord(value)) {
+    return DEFAULT_HOMEPAGE_CONFIG.news;
+  }
+
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    collapsed: typeof value.collapsed === 'boolean' ? value.collapsed : false,
+  };
+}
+
 function normalizeBookmarkLayoutMode(value: unknown): BookmarkLayoutMode {
   if (value === 'compact') {
     return 'compact';
@@ -277,5 +298,6 @@ export function normalizeHomepageConfig(value: unknown): HomepageConfig {
     searchEngines,
     bookmarks: bookmarks.length > 0 ? bookmarks : DEFAULT_BOOKMARKS,
     background: normalizeBackgroundConfig(value.background),
+    news: normalizeNewsConfig(value.news),
   };
 }

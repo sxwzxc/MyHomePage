@@ -26,6 +26,7 @@ import { isSettingsUnlocked, saveSettingsUnlock } from '@/lib/unlock-state';
 import ContextMenu from '@/components/ui/context-menu';
 import AnimatedBackground from '@/components/AnimatedBackground';
 import AnalogClock from '@/components/AnalogClock';
+import NewsSection from '@/components/NewsSection';
 
 type WeatherInfo = {
   cityName: string;
@@ -820,6 +821,26 @@ export default function HomepageDashboard() {
     }
   };
 
+  const handleNewsCollapsedChange = async (collapsed: boolean) => {
+    const nextConfig: HomepageConfig = {
+      ...config,
+      news: {
+        ...config.news,
+        collapsed,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    setConfig(nextConfig);
+
+    try {
+      const saved = await saveHomepageConfig(nextConfig);
+      setConfig(saved);
+    } catch (error) {
+      // Silent fail - user can still interact with the accordion
+    }
+  };
+
   if (isLoading) {
     return (
       <section className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
@@ -1088,6 +1109,12 @@ export default function HomepageDashboard() {
             )}
           </div>
         </article>
+
+        <NewsSection
+          enabled={config.news.enabled}
+          defaultCollapsed={config.news.collapsed}
+          onCollapsedChange={handleNewsCollapsedChange}
+        />
 
         {contextMenu && (
           <ContextMenu
