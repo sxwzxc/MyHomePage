@@ -1,7 +1,7 @@
 'use client';
 
-import Link from 'next/link';
 import { CSSProperties, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Pencil,
   Trash2,
@@ -15,7 +15,14 @@ import {
   X,
 } from 'lucide-react';
 import { Bookmark, HomepageConfig, DEFAULT_HOMEPAGE_CONFIG } from '@/lib/homepage-config';
-import { getHomepageConfig, getVisitCount, saveHomepageConfig, fetchBookmarkFavicon } from '@/lib/utils';
+import {
+  getHomepageConfig,
+  getVisitCount,
+  saveHomepageConfig,
+  fetchBookmarkFavicon,
+  verifyUnlockPassword,
+} from '@/lib/utils';
+import { isSettingsUnlocked, saveSettingsUnlock } from '@/lib/unlock-state';
 import ContextMenu from '@/components/ui/context-menu';
 import AnimatedBackground from '@/components/AnimatedBackground';
 
@@ -140,6 +147,7 @@ function BookmarkAvatar({ bookmark }: { bookmark: Bookmark }) {
 }
 
 export default function HomepageDashboard() {
+  const router = useRouter();
   const [config, setConfig] = useState<HomepageConfig>(DEFAULT_HOMEPAGE_CONFIG);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [selectedEngineId, setSelectedEngineId] = useState(
@@ -161,6 +169,12 @@ export default function HomepageDashboard() {
   const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [isAddingBookmark, setIsAddingBookmark] = useState(false);
   const [isSettingHomepage, setIsSettingHomepage] = useState(false);
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [unlockReason, setUnlockReason] = useState('请输入密码以解锁设置功能');
+  const [unlockPasswordInput, setUnlockPasswordInput] = useState('');
+  const [unlockError, setUnlockError] = useState<string | null>(null);
+  const [isUnlockVerifying, setIsUnlockVerifying] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editForm, setEditForm] = useState<BookmarkEditFormState>({
     id: '',
@@ -172,7 +186,9 @@ export default function HomepageDashboard() {
   const [editError, setEditError] = useState<string | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isFetchingEditIcon, setIsFetchingEditIcon] = useState(false);
+  const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
   const autoFaviconRefreshRunningRef = useRef(false);
+  const pendingUnlockActionRef = useRef<null | (() => void)>(null);
 
   const selectedEngine = useMemo(() => {
     return (
@@ -297,6 +313,10 @@ export default function HomepageDashboard() {
   }, [config.browserTitle]);
 
   useEffect(() => {
+    setIsUnlocked(isSettingsUnlocked());
+  }, []);
+
+  useEffect(() => {
     if (isLoading || autoFaviconRefreshRunningRef.current) {
       return;
     }
@@ -371,6 +391,57 @@ export default function HomepageDashboard() {
 
     const saved = await saveHomepageConfig(nextConfig);
     setConfig(saved);
+  };
+
+  const openUnlockModal = (reason: string, actionAfterUnlock?: () => void) => {
+    setUnlockReason(reason);
+    setUnlockPasswordInput('');
+    setUnlockError(null);
+    pendingUnlockActionRef.current = actionAfterUnlock || null;
+    setShowUnlockModal(true);
+  };
+
+  const ensureUnlocked = (reason: string, actionAfterUnlock?: () => void) => {
+    if (isUnlocked) {
+      return true;
+    }
+
+    openUnlockModal(reason, actionAfterUnlock);
+    return false;
+  };
+
+  const handleUnlockSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (isUnlockVerifying) {
+      return;
+    }
+
+    const password = unlockPasswordInput.trim();
+    if (!password) {
+      setUnlockError('请输入密码');
+      return;
+    }
+
+    setIsUnlockVerifying(true);
+    const verified = await verifyUnlockPassword(password);
+    setIsUnlockVerifying(false);
+
+    if (!verified) {
+      setUnlockError('密码错误，请重试');
+      return;
+    }
+
+    saveSettingsUnlock();
+    setIsUnlocked(true);
+    setShowUnlockModal(false);
+
+    const pendingAction = pendingUnlockActionRef.current;
+    pendingUnlockActionRef.current = null;
+
+    if (pendingAction) {
+      pendingAction();
+    }
   };
 
   const handleSetHomepage = async () => {
@@ -451,6 +522,11 @@ export default function HomepageDashboard() {
     bookmark: Bookmark
   ) => {
     event.preventDefault();
+
+    if (!ensureUnlocked('解锁后可编辑或删除书签')) {
+      return;
+    }
+
     openBookmarkMenu(bookmark, event.clientX, event.clientY);
   };
 
@@ -461,11 +537,19 @@ export default function HomepageDashboard() {
     event.preventDefault();
     event.stopPropagation();
 
+    if (!ensureUnlocked('解锁后可编辑或删除书签')) {
+      return;
+    }
+
     const rect = event.currentTarget.getBoundingClientRect();
     openBookmarkMenu(bookmark, rect.right - 8, rect.bottom + 6);
   };
 
   const handleEditBookmark = (bookmark: Bookmark) => {
+    if (!ensureUnlocked('解锁后可编辑书签')) {
+      return;
+    }
+
     setEditForm({
       id: bookmark.id,
       title: bookmark.title,
@@ -549,6 +633,10 @@ export default function HomepageDashboard() {
   };
 
   const handleDeleteBookmark = async (bookmark: Bookmark) => {
+    if (!ensureUnlocked('解锁后可删除书签')) {
+      return;
+    }
+
     if (!confirm(`确定要删除书签"${bookmark.title}"吗？`)) {
       return;
     }
@@ -568,6 +656,11 @@ export default function HomepageDashboard() {
 
   const handleQuickAddBookmark = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (!ensureUnlocked('解锁后可添加书签')) {
+      return;
+    }
+
     setQuickAddError(null);
 
     const title = quickAddForm.title.trim();
@@ -643,6 +736,89 @@ export default function HomepageDashboard() {
     }
   };
 
+  const handleSettingsClick = () => {
+    if (isUnlocked) {
+      router.push('/settings');
+      return;
+    }
+
+    openUnlockModal('请输入密码后进入设置页', () => {
+      router.push('/settings');
+    });
+  };
+
+  const handleBookmarkDragStart = (
+    event: React.DragEvent<HTMLDivElement>,
+    bookmarkId: string
+  ) => {
+    if (!ensureUnlocked('解锁后可拖拽排序书签')) {
+      event.preventDefault();
+      return;
+    }
+
+    setDraggingBookmarkId(bookmarkId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', bookmarkId);
+  };
+
+  const handleBookmarkDragOver = (
+    event: React.DragEvent<HTMLDivElement>,
+    bookmarkId: string
+  ) => {
+    if (!isUnlocked || !draggingBookmarkId || draggingBookmarkId === bookmarkId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleBookmarkDragEnd = () => {
+    setDraggingBookmarkId(null);
+  };
+
+  const handleBookmarkDrop = async (
+    event: React.DragEvent<HTMLDivElement>,
+    targetBookmarkId: string
+  ) => {
+    event.preventDefault();
+
+    if (!isUnlocked || !draggingBookmarkId || draggingBookmarkId === targetBookmarkId) {
+      setDraggingBookmarkId(null);
+      return;
+    }
+
+    const fromIndex = config.bookmarks.findIndex((item) => item.id === draggingBookmarkId);
+    const toIndex = config.bookmarks.findIndex((item) => item.id === targetBookmarkId);
+
+    if (fromIndex < 0 || toIndex < 0) {
+      setDraggingBookmarkId(null);
+      return;
+    }
+
+    const reorderedBookmarks = [...config.bookmarks];
+    const [movedBookmark] = reorderedBookmarks.splice(fromIndex, 1);
+    reorderedBookmarks.splice(toIndex, 0, movedBookmark);
+
+    const previousConfig = config;
+    const nextConfig: HomepageConfig = {
+      ...config,
+      bookmarks: reorderedBookmarks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    setConfig(nextConfig);
+    setDraggingBookmarkId(null);
+
+    try {
+      const saved = await saveHomepageConfig(nextConfig);
+      setConfig(saved);
+    } catch (error) {
+      setConfig(previousConfig);
+      alert(`排序保存失败：${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  };
+
   if (isLoading) {
     return (
       <section className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
@@ -670,13 +846,14 @@ export default function HomepageDashboard() {
           </button>
         ) : null}
 
-        <Link
-          href="/settings"
+        <button
+          type="button"
+          onClick={handleSettingsClick}
           className="rounded-xl border border-white/20 bg-slate-950/70 p-2 text-white shadow-lg backdrop-blur transition hover:border-white/60 hover:bg-slate-900/80"
           title="设置"
         >
           <Settings className="h-5 w-5" />
-        </Link>
+        </button>
       </div>
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -773,8 +950,15 @@ export default function HomepageDashboard() {
             {config.bookmarks.map((bookmark) => (
               <div
                 key={bookmark.id}
+                draggable={isUnlocked}
+                onDragStart={(event) => handleBookmarkDragStart(event, bookmark.id)}
+                onDragOver={(event) => handleBookmarkDragOver(event, bookmark.id)}
+                onDrop={(event) => handleBookmarkDrop(event, bookmark.id)}
+                onDragEnd={handleBookmarkDragEnd}
                 onContextMenu={(event) => handleBookmarkContextMenu(event, bookmark)}
                 className={`group relative rounded-xl border border-white/15 bg-slate-950/45 transition-all duration-200 hover:-translate-y-0.5 hover:border-white/45 hover:shadow-md ${
+                  draggingBookmarkId === bookmark.id ? 'opacity-60' : ''
+                } ${
                   isCompactMode ? 'p-3' : 'p-4'
                 }`}
               >
@@ -863,7 +1047,13 @@ export default function HomepageDashboard() {
               </div>
             ) : (
               <button
-                onClick={() => setShowQuickAdd(true)}
+                onClick={() => {
+                  if (!ensureUnlocked('解锁后可添加书签')) {
+                    return;
+                  }
+
+                  setShowQuickAdd(true);
+                }}
                 className={`group rounded-xl border border-dashed border-white/35 bg-slate-950/45 transition hover:border-white/65 hover:bg-slate-900/65 ${
                   isCompactMode
                     ? 'flex items-center gap-3 p-3 text-left'
@@ -990,6 +1180,74 @@ export default function HomepageDashboard() {
                   >
                     {isSavingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                     {isFetchingEditIcon ? '抓取图标中...' : isSavingEdit ? '保存中...' : '保存修改'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        ) : null}
+
+        {showUnlockModal ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl border border-white/20 bg-slate-900/95 p-5 shadow-2xl">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="text-lg font-semibold text-slate-100">请输入访问密码</h3>
+                  <p className="mt-1 text-sm text-slate-300">{unlockReason}</p>
+                  <p className="mt-1 text-xs text-slate-400">验证成功后 30 天内无需重复输入。</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isUnlockVerifying) {
+                      return;
+                    }
+                    setShowUnlockModal(false);
+                    pendingUnlockActionRef.current = null;
+                  }}
+                  className="rounded-md p-1 text-slate-400 transition hover:bg-white/10 hover:text-slate-100"
+                  aria-label="关闭密码弹窗"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <form className="space-y-3" onSubmit={handleUnlockSubmit}>
+                <input
+                  type="password"
+                  autoFocus
+                  value={unlockPasswordInput}
+                  onChange={(event) => {
+                    setUnlockPasswordInput(event.target.value);
+                    setUnlockError(null);
+                  }}
+                  placeholder="输入密码"
+                  className="w-full rounded-lg border border-white/20 bg-slate-800/80 px-3 py-2 text-sm text-white outline-none transition focus:border-cyan-400"
+                />
+
+                {unlockError ? <p className="text-sm text-amber-200">{unlockError}</p> : null}
+
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isUnlockVerifying) {
+                        return;
+                      }
+                      setShowUnlockModal(false);
+                      pendingUnlockActionRef.current = null;
+                    }}
+                    className="rounded-lg bg-white/10 px-3 py-2 text-sm text-slate-100 transition hover:bg-white/20"
+                  >
+                    取消
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isUnlockVerifying}
+                    className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400 disabled:opacity-70"
+                  >
+                    {isUnlockVerifying ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {isUnlockVerifying ? '验证中...' : '解锁'}
                   </button>
                 </div>
               </form>

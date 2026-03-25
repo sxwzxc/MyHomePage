@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2 } from 'lucide-react';
 import {
@@ -16,6 +17,7 @@ import {
   getHomepageConfig,
   saveHomepageConfig,
 } from '@/lib/utils';
+import { isSettingsUnlocked } from '@/lib/unlock-state';
 
 type BookmarkFormState = {
   id: string;
@@ -67,6 +69,9 @@ function BookmarkIconPreview({ bookmark }: { bookmark: Bookmark }) {
 }
 
 export default function SettingsDashboard() {
+  const router = useRouter();
+  const [accessChecked, setAccessChecked] = useState(false);
+  const [accessAllowed, setAccessAllowed] = useState(false);
   const [config, setConfig] = useState<HomepageConfig>(DEFAULT_HOMEPAGE_CONFIG);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -121,6 +126,21 @@ export default function SettingsDashboard() {
   );
 
   useEffect(() => {
+    if (isSettingsUnlocked()) {
+      setAccessAllowed(true);
+    } else {
+      window.alert('请先在主页输入密码解锁后，再进入设置页。');
+      router.replace('/');
+    }
+
+    setAccessChecked(true);
+  }, [router]);
+
+  useEffect(() => {
+    if (!accessAllowed) {
+      return;
+    }
+
     let cancelled = false;
 
     async function loadConfig() {
@@ -159,7 +179,7 @@ export default function SettingsDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [accessAllowed]);
 
   useEffect(() => {
     return () => {
@@ -462,6 +482,20 @@ export default function SettingsDashboard() {
       setEngineForm({ id: '', name: '', template: '' });
     }
   };
+
+  if (!accessChecked) {
+    return (
+      <section className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
+        <div className="rounded-2xl border border-white/20 bg-white/10 px-6 py-5 text-white shadow-xl backdrop-blur-sm">
+          正在校验访问权限...
+        </div>
+      </section>
+    );
+  }
+
+  if (!accessAllowed) {
+    return null;
+  }
 
   if (isLoadingConfig) {
     return (

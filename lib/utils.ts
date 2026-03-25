@@ -95,3 +95,20 @@ export async function fetchBookmarkFavicon(url: string): Promise<string | null> 
     return null;
   }
 }
+
+export async function verifyUnlockPassword(password: string): Promise<boolean> {
+  if (!password.trim()) {
+    return false;
+  }
+
+  try {
+    const data = await requestJson<{ verified?: boolean }>('/password-verify', {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+
+    return Boolean(data.verified);
+  } catch {
+    return false;
+  }
+}
