@@ -1,0 +1,164 @@
+export type Bookmark = {
+  id: string;
+  title: string;
+  url: string;
+  icon?: string;
+};
+
+export type SearchEngine = {
+  id: string;
+  name: string;
+  template: string;
+};
+
+export type HomepageConfig = {
+  version: number;
+  updatedAt: string;
+  weatherCity: string;
+  address: string;
+  defaultSearchEngineId: string;
+  searchEngines: SearchEngine[];
+  bookmarks: Bookmark[];
+};
+
+export const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
+  {
+    id: 'google',
+    name: 'Google',
+    template: 'https://www.google.com/search?q=%s',
+  },
+  {
+    id: 'bing',
+    name: 'Bing',
+    template: 'https://www.bing.com/search?q=%s',
+  },
+  {
+    id: 'baidu',
+    name: '百度',
+    template: 'https://www.baidu.com/s?wd=%s',
+  },
+  {
+    id: 'duckduckgo',
+    name: 'DuckDuckGo',
+    template: 'https://duckduckgo.com/?q=%s',
+  },
+];
+
+export const DEFAULT_BOOKMARKS: Bookmark[] = [
+  { id: 'bookmark-github', title: 'GitHub', url: 'https://github.com' },
+  {
+    id: 'bookmark-edgeone',
+    title: 'EdgeOne Pages',
+    url: 'https://edgeone.ai/pages',
+  },
+  { id: 'bookmark-bilibili', title: 'Bilibili', url: 'https://www.bilibili.com' },
+  { id: 'bookmark-zhihu', title: '知乎', url: 'https://www.zhihu.com' },
+];
+
+export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
+  version: 1,
+  updatedAt: new Date(0).toISOString(),
+  weatherCity: 'Shanghai',
+  address: '中国 · 上海',
+  defaultSearchEngineId: 'google',
+  searchEngines: DEFAULT_SEARCH_ENGINES,
+  bookmarks: DEFAULT_BOOKMARKS,
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function asString(value: unknown, fallback = ''): string {
+  return typeof value === 'string' ? value : fallback;
+}
+
+function normalizeSearchEngines(value: unknown): SearchEngine[] {
+  if (!Array.isArray(value)) {
+    return DEFAULT_SEARCH_ENGINES;
+  }
+
+  const engines = value
+    .map((item) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      const id = asString(item.id).trim();
+      const name = asString(item.name).trim();
+      const template = asString(item.template).trim();
+
+      if (!id || !name || !template || !template.includes('%s')) {
+        return null;
+      }
+
+      return { id, name, template };
+    })
+    .filter((item): item is SearchEngine => Boolean(item));
+
+  return engines.length > 0 ? engines : DEFAULT_SEARCH_ENGINES;
+}
+
+function normalizeBookmarks(value: unknown): Bookmark[] {
+  if (!Array.isArray(value)) {
+    return DEFAULT_BOOKMARKS;
+  }
+
+  const bookmarks = value
+    .map((item) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      const id = asString(item.id).trim();
+      const title = asString(item.title).trim();
+      const url = asString(item.url).trim();
+      const icon = asString(item.icon).trim();
+
+      if (!id || !title || !url) {
+        return null;
+      }
+
+      try {
+        const normalizedUrl = new URL(url).toString();
+        return {
+          id,
+          title,
+          url: normalizedUrl,
+          icon: icon || undefined,
+        };
+      } catch {
+        return null;
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+  return bookmarks;
+}
+
+export function normalizeHomepageConfig(value: unknown): HomepageConfig {
+  if (!isRecord(value)) {
+    return {
+      ...DEFAULT_HOMEPAGE_CONFIG,
+      searchEngines: [...DEFAULT_HOMEPAGE_CONFIG.searchEngines],
+      bookmarks: [...DEFAULT_HOMEPAGE_CONFIG.bookmarks],
+    };
+  }
+
+  const searchEngines = normalizeSearchEngines(value.searchEngines);
+  const bookmarks = normalizeBookmarks(value.bookmarks);
+  const defaultSearchEngineId = asString(value.defaultSearchEngineId).trim();
+  const hasDefault = searchEngines.some((item) => item.id === defaultSearchEngineId);
+
+  return {
+    version: Number.isFinite(Number(value.version)) ? Number(value.version) : 1,
+    updatedAt: asString(value.updatedAt, new Date().toISOString()),
+    weatherCity: asString(value.weatherCity, DEFAULT_HOMEPAGE_CONFIG.weatherCity),
+    address: asString(value.address, DEFAULT_HOMEPAGE_CONFIG.address),
+    defaultSearchEngineId: hasDefault
+      ? defaultSearchEngineId
+      : searchEngines[0].id,
+    searchEngines,
+    bookmarks: bookmarks.length > 0 ? bookmarks : DEFAULT_BOOKMARKS,
+  };
+}

@@ -5,8 +5,8 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "EdgeOne Pages Functions: KV Store",
-  description: "An example of using EdgeOne Pages Functions with KV Store.",
+  title: "我的起始页 | MyHomePage",
+  description: "基于 EdgeOne KV 持久化的可配置浏览器起始页。",
 };
 
 export default function RootLayout({
@@ -15,7 +15,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="zh-CN">
       <body className={inter.className}>{children}</body>
     </html>
   );

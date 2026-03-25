@@ -1,9 +1,9 @@
-import Kv from '@/components/Kv';
+import HomepageDashboard from '@/components/HomepageDashboard';
 
 export default function Home() {
   return (
-    <main>
-      <Kv />
+    <main className="min-h-screen">
+      <HomepageDashboard />
     </main>
   );
 }

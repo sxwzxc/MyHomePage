@@ -82,8 +82,15 @@
   * {
     @apply border-border;
   }
+  html,
   body {
-    @apply bg-background text-foreground;
+    min-height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    background-image:
+      radial-gradient(circle at 10% 10%, rgba(56, 189, 248, 0.15), transparent 30%),
+      radial-gradient(circle at 90% 90%, rgba(217, 70, 239, 0.12), transparent 30%);
   }
 }
 

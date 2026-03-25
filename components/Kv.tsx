@@ -4,9 +4,9 @@ import { getVisitCount } from '@/lib/utils';
 import React, { useState, useEffect } from 'react';
 
 export default function Kv() {
-  const [visitCount, setVisitCount] = useState(null);
+  const [visitCount, setVisitCount] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchVisitCount() {
