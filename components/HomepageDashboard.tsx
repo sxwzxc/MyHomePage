@@ -8,7 +8,6 @@ import {
   Plus,
   Settings,
   Search,
-  ChevronDown,
   Bookmark as BookmarkIcon,
   MoreVertical,
   Loader2,
@@ -191,6 +190,8 @@ export default function HomepageDashboard() {
   const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
   const autoFaviconRefreshRunningRef = useRef(false);
   const pendingUnlockActionRef = useRef<null | (() => void)>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const quickSearchKeywords = ['AI 工具', '天气预报', '开源趋势', '美食推荐'];
 
   const selectedEngine = useMemo(() => {
     return (
@@ -931,41 +932,87 @@ export default function HomepageDashboard() {
           ) : null}
         </header>
 
-        <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur">
-          <form className="flex flex-col gap-3 sm:flex-row" onSubmit={handleSearch}>
-            <div className="relative">
-              <select
-                className="w-full appearance-none rounded-xl border border-white/20 bg-slate-950/70 py-3 pl-3 pr-8 text-sm text-white outline-none transition focus:border-white/70 focus:ring-2 focus:ring-white/20"
-                value={selectedEngineId}
-                onChange={(event) => setSelectedEngineId(event.target.value)}
-              >
+        <article className="relative overflow-hidden rounded-3xl border border-white/15 bg-gradient-to-br from-slate-900/75 via-slate-900/55 to-slate-900/35 p-6 shadow-xl backdrop-blur">
+          <div className="pointer-events-none absolute inset-0 opacity-70 mix-blend-screen">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(45,212,191,0.16),transparent_35%),radial-gradient(circle_at_80%_10%,rgba(59,130,246,0.18),transparent_30%),radial-gradient(circle_at_50%_80%,rgba(236,72,153,0.12),transparent_32%)]" />
+          </div>
+
+          <div className="relative flex flex-col gap-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-white/70">
+                  Multi-engine Search
+                </p>
+                <h2 className="text-shadow-title text-xl font-semibold text-white">
+                  想搜点什么？
+                </h2>
+                <p className="text-sm text-white/80">
+                  支持 {config.searchEngines.length} 个搜索引擎，回车即可跳转。
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
                 {config.searchEngines.map((engine) => (
-                  <option key={engine.id} value={engine.id}>
+                  <button
+                    key={engine.id}
+                    type="button"
+                    onClick={() => setSelectedEngineId(engine.id)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                      selectedEngineId === engine.id
+                        ? 'border-white bg-white text-slate-900 shadow-sm'
+                        : 'border-white/25 bg-white/5 text-white hover:border-white/60 hover:bg-white/15'
+                    }`}
+                    aria-pressed={selectedEngineId === engine.id}
+                  >
                     {engine.name}
-                  </option>
+                  </button>
                 ))}
-              </select>
-              <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              </div>
             </div>
 
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                value={searchKeyword}
-                onChange={(event) => setSearchKeyword(event.target.value)}
-                className="w-full rounded-xl border border-white/20 bg-slate-950/70 py-3 pl-10 pr-3 text-sm text-white outline-none transition focus:border-white/70 focus:ring-2 focus:ring-white/20"
-                placeholder="输入关键词后回车搜索..."
-              />
-            </div>
+            <form onSubmit={handleSearch}>
+              <div className="group relative flex items-center gap-3 rounded-2xl border border-white/20 bg-slate-950/70 px-4 py-4 shadow-[0_10px_40px_rgba(15,23,42,0.45)] backdrop-blur">
+                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 text-cyan-300 transition group-focus-within:bg-white/20">
+                  <Search className="h-5 w-5" />
+                </div>
+                <input
+                  ref={searchInputRef}
+                  value={searchKeyword}
+                  onChange={(event) => setSearchKeyword(event.target.value)}
+                  className="w-full bg-transparent text-base text-white placeholder:text-white/60 outline-none"
+                  placeholder={`使用 ${selectedEngine?.name ?? '搜索引擎'} 搜索...`}
+                />
+                <button
+                  type="submit"
+                  className="rounded-xl bg-gradient-to-r from-cyan-400 to-blue-500 px-5 py-2 text-sm font-semibold text-slate-900 shadow-lg transition hover:from-cyan-300 hover:to-blue-400"
+                >
+                  搜索
+                </button>
+              </div>
+            </form>
 
-            <button
-              type="submit"
-              className="text-shadow-soft flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/10 px-6 py-3 text-sm font-medium text-white transition hover:bg-white/20"
-            >
-              <Search className="h-4 w-4" />
-              搜索
-            </button>
-          </form>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-white/85">
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                Enter / 回车快速搜索
+              </span>
+              <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1">
+                当前引擎：{selectedEngine?.name}
+              </span>
+              {quickSearchKeywords.map((keyword) => (
+                <button
+                  key={keyword}
+                  type="button"
+                  onClick={() => {
+                    setSearchKeyword(keyword);
+                    searchInputRef.current?.focus();
+                  }}
+                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-white/85 transition hover:border-white/40 hover:bg-white/15"
+                >
+                  {keyword}
+                </button>
+              ))}
+            </div>
+          </div>
         </article>
 
         <article className="rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur">
