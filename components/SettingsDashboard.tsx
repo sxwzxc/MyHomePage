@@ -7,6 +7,7 @@ import {
   Bookmark,
   HomepageConfig,
   SearchEngine,
+  BackgroundConfig,
   DEFAULT_HOMEPAGE_CONFIG,
 } from '@/lib/homepage-config';
 import {
@@ -408,6 +409,146 @@ export default function SettingsDashboard() {
           >
             保存天气与地址
           </button>
+        </article>
+
+        <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
+          <h2 className="text-base font-semibold">背景设置</h2>
+
+          <div className="mt-3">
+            <label className="mb-1 block text-xs text-slate-300">背景类型</label>
+            <select
+              className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+              value={config.background.type}
+              onChange={(e) => {
+                const type = e.target.value as BackgroundConfig['type'];
+                updateConfig((prev) => ({
+                  ...prev,
+                  background: { ...prev.background, type },
+                }));
+              }}
+            >
+              <option value="animated-gradient">动态流光渐变</option>
+              <option value="image">自定义图片</option>
+              <option value="solid">纯色背景</option>
+            </select>
+          </div>
+
+          {config.background.type === 'animated-gradient' && (
+            <div className="mt-3">
+              <label className="mb-1 block text-xs text-slate-300">渐变预设</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { id: 'default', label: '默认', colors: 'from-cyan-500 to-fuchsia-500' },
+                  { id: 'ocean', label: '海洋', colors: 'from-blue-500 to-teal-500' },
+                  { id: 'sunset', label: '日落', colors: 'from-orange-500 to-purple-600' },
+                  { id: 'forest', label: '森林', colors: 'from-green-500 to-teal-600' },
+                  { id: 'aurora', label: '极光', colors: 'from-indigo-500 to-pink-500' },
+                  { id: 'fire', label: '烈焰', colors: 'from-red-500 to-yellow-500' },
+                ].map((preset) => (
+                  <button
+                    key={preset.id}
+                    onClick={() => {
+                      updateConfig((prev) => ({
+                        ...prev,
+                        background: { ...prev.background, gradientPreset: preset.id },
+                      }));
+                    }}
+                    className={`rounded-lg p-3 text-xs font-medium transition ${
+                      config.background.gradientPreset === preset.id
+                        ? 'ring-2 ring-cyan-400'
+                        : 'hover:ring-2 hover:ring-white/30'
+                    }`}
+                  >
+                    <div
+                      className={`mb-1 h-8 rounded bg-gradient-to-r ${preset.colors}`}
+                    />
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {config.background.type === 'image' && (
+            <div className="mt-3 space-y-3">
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">图片 URL</label>
+                <input
+                  type="url"
+                  className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+                  placeholder="https://example.com/image.jpg"
+                  value={config.background.imageUrl || ''}
+                  onChange={(e) => {
+                    updateConfig((prev) => ({
+                      ...prev,
+                      background: { ...prev.background, imageUrl: e.target.value },
+                    }));
+                  }}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">
+                  模糊程度: {config.background.imageBlur || 0}
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="10"
+                  value={config.background.imageBlur || 0}
+                  onChange={(e) => {
+                    updateConfig((prev) => ({
+                      ...prev,
+                      background: {
+                        ...prev.background,
+                        imageBlur: Number(e.target.value),
+                      },
+                    }));
+                  }}
+                  className="w-full"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">
+                  不透明度: {config.background.imageOpacity || 100}%
+                </label>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={config.background.imageOpacity || 100}
+                  onChange={(e) => {
+                    updateConfig((prev) => ({
+                      ...prev,
+                      background: {
+                        ...prev.background,
+                        imageOpacity: Number(e.target.value),
+                      },
+                    }));
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+          )}
+
+          {config.background.type === 'solid' && (
+            <div className="mt-3">
+              <label className="mb-1 block text-xs text-slate-300">颜色</label>
+              <input
+                type="color"
+                className="h-10 w-full rounded-lg border border-white/20 bg-slate-900/70"
+                value={config.background.solidColor || '#0f172a'}
+                onChange={(e) => {
+                  updateConfig((prev) => ({
+                    ...prev,
+                    background: { ...prev.background, solidColor: e.target.value },
+                  }));
+                }}
+              />
+            </div>
+          )}
         </article>
 
         <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">

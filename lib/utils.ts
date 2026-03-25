@@ -6,14 +6,6 @@ import {
   normalizeHomepageConfig,
 } from '@/lib/homepage-config';
 
-export type ClientInfo = {
-  ip: string;
-  location?: string;
-  city?: string;
-  region?: string;
-  country?: string;
-};
-
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
@@ -83,20 +75,6 @@ export async function saveHomepageConfig(
   });
 
   return normalizeHomepageConfig(data);
-}
-
-export async function getClientInfo(): Promise<ClientInfo> {
-  const data = await requestJson<ClientInfo>('/client-info', {
-    method: 'GET',
-  });
-
-  return {
-    ip: data.ip || 'unknown',
-    location: data.location || '',
-    city: data.city || '',
-    region: data.region || '',
-    country: data.country || '',
-  };
 }
 
 export async function fetchBookmarkFavicon(url: string): Promise<string | null> {

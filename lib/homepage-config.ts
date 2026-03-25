@@ -11,6 +11,15 @@ export type SearchEngine = {
   template: string;
 };
 
+export type BackgroundConfig = {
+  type: 'animated-gradient' | 'image' | 'solid';
+  imageUrl?: string;
+  imageBlur?: number; // 0-10
+  imageOpacity?: number; // 0-100
+  gradientPreset?: string;
+  solidColor?: string;
+};
+
 export type HomepageConfig = {
   version: number;
   updatedAt: string;
@@ -19,6 +28,7 @@ export type HomepageConfig = {
   defaultSearchEngineId: string;
   searchEngines: SearchEngine[];
   bookmarks: Bookmark[];
+  background: BackgroundConfig;
 };
 
 export const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
@@ -63,6 +73,12 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   defaultSearchEngineId: 'google',
   searchEngines: DEFAULT_SEARCH_ENGINES,
   bookmarks: DEFAULT_BOOKMARKS,
+  background: {
+    type: 'animated-gradient',
+    imageBlur: 5,
+    imageOpacity: 80,
+    gradientPreset: 'default',
+  },
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -136,6 +152,31 @@ function normalizeBookmarks(value: unknown): Bookmark[] {
   return bookmarks;
 }
 
+function normalizeBackgroundConfig(value: unknown): BackgroundConfig {
+  if (!isRecord(value)) {
+    return DEFAULT_HOMEPAGE_CONFIG.background;
+  }
+
+  const type = ['animated-gradient', 'image', 'solid'].includes(String(value.type))
+    ? (value.type as BackgroundConfig['type'])
+    : 'animated-gradient';
+
+  return {
+    type,
+    imageUrl: asString(value.imageUrl),
+    imageBlur:
+      typeof value.imageBlur === 'number'
+        ? Math.max(0, Math.min(10, value.imageBlur))
+        : 5,
+    imageOpacity:
+      typeof value.imageOpacity === 'number'
+        ? Math.max(0, Math.min(100, value.imageOpacity))
+        : 80,
+    gradientPreset: asString(value.gradientPreset, 'default'),
+    solidColor: asString(value.solidColor),
+  };
+}
+
 export function normalizeHomepageConfig(value: unknown): HomepageConfig {
   if (!isRecord(value)) {
     return {
@@ -160,5 +201,6 @@ export function normalizeHomepageConfig(value: unknown): HomepageConfig {
       : searchEngines[0].id,
     searchEngines,
     bookmarks: bookmarks.length > 0 ? bookmarks : DEFAULT_BOOKMARKS,
+    background: normalizeBackgroundConfig(value.background),
   };
 }
