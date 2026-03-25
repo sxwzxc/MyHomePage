@@ -3,6 +3,7 @@ export type Bookmark = {
   title: string;
   url: string;
   icon?: string;
+  isCustomIcon?: boolean;
 };
 
 export type SearchEngine = {
@@ -130,6 +131,13 @@ function normalizeBookmarks(value: unknown): Bookmark[] {
       const title = asString(item.title).trim();
       const url = asString(item.url).trim();
       const icon = asString(item.icon).trim();
+      const hasCustomFlag = typeof item.isCustomIcon === 'boolean';
+      const inferredCustom = Boolean(
+        icon && !icon.startsWith('http') && !icon.startsWith('data:')
+      );
+      const isCustomIcon = hasCustomFlag
+        ? Boolean(item.isCustomIcon)
+        : inferredCustom;
 
       if (!id || !title || !url) {
         return null;
@@ -142,6 +150,7 @@ function normalizeBookmarks(value: unknown): Bookmark[] {
           title,
           url: normalizedUrl,
           icon: icon || undefined,
+          isCustomIcon,
         };
       } catch {
         return null;

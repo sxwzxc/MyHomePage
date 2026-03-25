@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2 } from 'lucide-react';
 import {
   Bookmark,
   HomepageConfig,
@@ -21,6 +22,7 @@ type BookmarkFormState = {
   title: string;
   url: string;
   icon: string;
+  isCustomIcon: boolean;
 };
 
 type SearchEngineFormState = {
@@ -32,6 +34,15 @@ type SearchEngineFormState = {
 function createId(prefix: string): string {
   const random = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now()}_${random}`;
+}
+
+function isCustomIconBookmark(bookmark: Bookmark): boolean {
+  if (bookmark.isCustomIcon) {
+    return true;
+  }
+
+  const icon = bookmark.icon?.trim() || '';
+  return Boolean(icon && !icon.startsWith('http') && !icon.startsWith('data:'));
 }
 
 function BookmarkIconPreview({ bookmark }: { bookmark: Bookmark }) {
@@ -72,9 +83,14 @@ export default function SettingsDashboard() {
     title: '',
     url: '',
     icon: '',
+    isCustomIcon: false,
   });
   const [bookmarkFormError, setBookmarkFormError] = useState<string | null>(null);
   const [faviconLoading, setFaviconLoading] = useState(false);
+  const [bulkRefreshStatus, setBulkRefreshStatus] = useState<
+    'idle' | 'refreshing' | 'done' | 'error'
+  >('idle');
+  const [bulkRefreshHint, setBulkRefreshHint] = useState<string | null>(null);
 
   const [engineForm, setEngineForm] = useState<SearchEngineFormState>({
     id: '',
@@ -83,6 +99,15 @@ export default function SettingsDashboard() {
   });
   const [engineFormError, setEngineFormError] = useState<string | null>(null);
   const saveHintTimer = useRef<number | null>(null);
+
+  const refreshableBookmarks = useMemo(
+    () => config.bookmarks.filter((bookmark) => !isCustomIconBookmark(bookmark)),
+    [config.bookmarks]
+  );
+  const customIconCount = useMemo(
+    () => config.bookmarks.length - refreshableBookmarks.length,
+    [config.bookmarks.length, refreshableBookmarks.length]
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +161,7 @@ export default function SettingsDashboard() {
       title: target.title,
       url: target.url,
       icon: target.icon || '',
+      isCustomIcon: isCustomIconBookmark(target),
     });
   }, [config.bookmarks, searchParams]);
 
@@ -163,9 +189,11 @@ export default function SettingsDashboard() {
       saveHintTimer.current = window.setTimeout(() => {
         setSaveStatus('idle');
       }, 1200);
+      return saved;
     } catch (error) {
       setSaveStatus('error');
       setSaveError(error instanceof Error ? error.message : '保存失败');
+      return null;
     }
   }, []);
 
@@ -213,6 +241,7 @@ export default function SettingsDashboard() {
     }
 
     let finalIcon = iconInput;
+    let finalIsCustomIcon = iconInput ? bookmarkForm.isCustomIcon : false;
 
     if (!finalIcon) {
       setFaviconLoading(true);
@@ -221,6 +250,7 @@ export default function SettingsDashboard() {
       if (autoIcon) {
         finalIcon = autoIcon;
       }
+      finalIsCustomIcon = false;
     }
 
     const editing = Boolean(bookmarkForm.id);
@@ -230,12 +260,24 @@ export default function SettingsDashboard() {
       const nextBookmarks = editing
         ? prev.bookmarks.map((item) =>
             item.id === id
-              ? { id, title, url: normalizedUrl, icon: finalIcon || undefined }
+              ? {
+                  id,
+                  title,
+                  url: normalizedUrl,
+                  icon: finalIcon || undefined,
+                  isCustomIcon: finalIcon ? finalIsCustomIcon : false,
+                }
               : item
           )
         : [
             ...prev.bookmarks,
-            { id, title, url: normalizedUrl, icon: finalIcon || undefined },
+            {
+              id,
+              title,
+              url: normalizedUrl,
+              icon: finalIcon || undefined,
+              isCustomIcon: finalIcon ? finalIsCustomIcon : false,
+            },
           ];
 
       return {
@@ -244,7 +286,7 @@ export default function SettingsDashboard() {
       };
     });
 
-    setBookmarkForm({ id: '', title: '', url: '', icon: '' });
+    setBookmarkForm({ id: '', title: '', url: '', icon: '', isCustomIcon: false });
   };
 
   const editBookmark = (bookmark: Bookmark) => {
@@ -253,6 +295,7 @@ export default function SettingsDashboard() {
       title: bookmark.title,
       url: bookmark.url,
       icon: bookmark.icon || '',
+      isCustomIcon: isCustomIconBookmark(bookmark),
     });
   };
 
@@ -263,8 +306,72 @@ export default function SettingsDashboard() {
     }));
 
     if (bookmarkForm.id === id) {
-      setBookmarkForm({ id: '', title: '', url: '', icon: '' });
+      setBookmarkForm({ id: '', title: '', url: '', icon: '', isCustomIcon: false });
     }
+  };
+
+  const handleBulkRefreshAutoIcons = async () => {
+    if (refreshableBookmarks.length === 0) {
+      setBulkRefreshStatus('error');
+      setBulkRefreshHint('当前没有可刷新的自动图标书签。');
+      return;
+    }
+
+    setBulkRefreshStatus('refreshing');
+    setBulkRefreshHint(`正在刷新 ${refreshableBookmarks.length} 个书签图标...`);
+
+    const refreshableIds = new Set(refreshableBookmarks.map((bookmark) => bookmark.id));
+    let successCount = 0;
+    let failedCount = 0;
+
+    const nextBookmarks = await Promise.all(
+      config.bookmarks.map(async (bookmark) => {
+        if (!refreshableIds.has(bookmark.id)) {
+          return bookmark;
+        }
+
+        const fetchedIcon = await fetchBookmarkFavicon(bookmark.url);
+
+        if (!fetchedIcon) {
+          failedCount += 1;
+          return bookmark;
+        }
+
+        successCount += 1;
+        return {
+          ...bookmark,
+          icon: fetchedIcon,
+          isCustomIcon: false,
+        };
+      })
+    );
+
+    if (successCount === 0) {
+      setBulkRefreshStatus('error');
+      setBulkRefreshHint(`未能刷新图标，失败 ${failedCount} 个。`);
+      return;
+    }
+
+    const nextConfig: HomepageConfig = {
+      ...config,
+      bookmarks: nextBookmarks,
+      updatedAt: new Date().toISOString(),
+    };
+
+    const saved = await persistConfig(nextConfig);
+
+    if (!saved) {
+      setBulkRefreshStatus('error');
+      setBulkRefreshHint('图标刷新已完成，但保存配置失败，请稍后重试。');
+      return;
+    }
+
+    setBulkRefreshStatus(failedCount > 0 ? 'error' : 'done');
+    setBulkRefreshHint(
+      failedCount > 0
+        ? `刷新完成：成功 ${successCount}，失败 ${failedCount}。`
+        : `刷新完成：共成功更新 ${successCount} 个图标。`
+    );
   };
 
   const handleEngineSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -380,6 +487,13 @@ export default function SettingsDashboard() {
             </p>
           ) : null}
 
+          {saveStatus === 'saving' ? (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-lg bg-cyan-500/20 px-3 py-2 text-sm text-cyan-100">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              正在保存...
+            </p>
+          ) : null}
+
           {saveStatus === 'saved' ? (
             <p className="mt-3 rounded-lg bg-green-500/20 px-3 py-2 text-sm text-green-100">
               保存成功
@@ -388,7 +502,10 @@ export default function SettingsDashboard() {
         </header>
 
         <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
-          <h2 className="text-base font-semibold">天气与地址</h2>
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            <CloudSun className="h-4 w-4 text-cyan-300" />
+            天气与地址
+          </h2>
           <div className="mt-3 grid gap-3 md:grid-cols-2">
             <input
               className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
@@ -552,7 +669,10 @@ export default function SettingsDashboard() {
         </article>
 
         <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
-          <h2 className="text-base font-semibold">搜索引擎</h2>
+          <h2 className="flex items-center gap-2 text-base font-semibold">
+            <Search className="h-4 w-4 text-cyan-300" />
+            搜索引擎
+          </h2>
           <div className="mt-3">
             <label className="mb-1 block text-xs text-slate-300">默认搜索引擎</label>
             <select
@@ -630,8 +750,55 @@ export default function SettingsDashboard() {
         </article>
 
         <article className="rounded-2xl border border-white/10 bg-black/25 p-4 shadow-lg backdrop-blur">
-          <h2 className="text-base font-semibold">书签管理</h2>
-          <p className="mt-1 text-xs text-slate-300">若不手填图标，将自动下载网站图标并保存到 KV。</p>
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-semibold">
+                <Sparkles className="h-4 w-4 text-cyan-300" />
+                书签管理
+              </h2>
+              <p className="mt-1 text-xs text-slate-300">
+                自动图标可一键刷新；勾选“自定义图标”后将跳过批量刷新。
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleBulkRefreshAutoIcons}
+              disabled={bulkRefreshStatus === 'refreshing' || refreshableBookmarks.length === 0}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
+            >
+              {bulkRefreshStatus === 'refreshing' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              刷新自动图标（{refreshableBookmarks.length}）
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full bg-white/10 px-3 py-1 text-slate-200">总计 {config.bookmarks.length}</span>
+            <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-cyan-100">
+              自动图标 {refreshableBookmarks.length}
+            </span>
+            <span className="rounded-full bg-fuchsia-500/20 px-3 py-1 text-fuchsia-100">
+              自定义图标 {customIconCount}
+            </span>
+          </div>
+
+          {bulkRefreshHint ? (
+            <p
+              className={`mt-2 rounded-lg px-3 py-2 text-sm ${
+                bulkRefreshStatus === 'error'
+                  ? 'bg-amber-500/20 text-amber-100'
+                  : bulkRefreshStatus === 'refreshing'
+                    ? 'bg-cyan-500/20 text-cyan-100'
+                    : 'bg-emerald-500/20 text-emerald-100'
+              }`}
+            >
+              {bulkRefreshHint}
+            </p>
+          ) : null}
 
           <form className="mt-3 grid gap-2 md:grid-cols-4" onSubmit={handleBookmarkSubmit}>
             <input
@@ -654,9 +821,18 @@ export default function SettingsDashboard() {
               className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
               placeholder="图标（可空，自动抓取）"
               value={bookmarkForm.icon}
-              onChange={(event) =>
-                setBookmarkForm((prev) => ({ ...prev, icon: event.target.value }))
-              }
+              onChange={(event) => {
+                const nextIcon = event.target.value;
+                setBookmarkForm((prev) => ({
+                  ...prev,
+                  icon: nextIcon,
+                  isCustomIcon: nextIcon.trim()
+                    ? prev.icon.trim()
+                      ? prev.isCustomIcon
+                      : true
+                    : false,
+                }));
+              }}
             />
             <button
               type="submit"
@@ -666,6 +842,18 @@ export default function SettingsDashboard() {
               {faviconLoading ? '抓取图标中...' : bookmarkForm.id ? '更新书签' : '新增书签'}
             </button>
           </form>
+
+          <label className="mt-2 inline-flex items-center gap-2 rounded-lg border border-white/15 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
+            <input
+              type="checkbox"
+              checked={bookmarkForm.isCustomIcon}
+              disabled={!bookmarkForm.icon.trim()}
+              onChange={(event) =>
+                setBookmarkForm((prev) => ({ ...prev, isCustomIcon: event.target.checked }))
+              }
+            />
+            将当前图标标记为“自定义图标”（批量刷新时跳过）
+          </label>
 
           {bookmarkFormError ? (
             <p className="mt-2 text-sm text-amber-200">{bookmarkFormError}</p>
@@ -681,22 +869,35 @@ export default function SettingsDashboard() {
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/10">
                     <BookmarkIconPreview bookmark={bookmark} />
                   </div>
-                  <h3 className="truncate font-medium">{bookmark.title}</h3>
-                  <p className="truncate text-xs text-slate-400">{bookmark.url}</p>
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <h3 className="truncate font-medium">{bookmark.title}</h3>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] ${
+                        isCustomIconBookmark(bookmark)
+                          ? 'bg-fuchsia-500/20 text-fuchsia-100'
+                          : 'bg-cyan-500/20 text-cyan-100'
+                      }`}
+                    >
+                      {isCustomIconBookmark(bookmark) ? '自定义' : '自动'}
+                    </span>
+                  </div>
+                  <p className="truncate text-xs text-slate-400">{new URL(bookmark.url).hostname}</p>
                 </a>
                 <div className="mt-3 flex gap-2 opacity-100 sm:opacity-0 sm:transition sm:group-hover:opacity-100">
                   <button
                     type="button"
                     onClick={() => editBookmark(bookmark)}
-                    className="rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
+                    className="inline-flex items-center gap-1 rounded-md bg-white/10 px-2 py-1 text-xs hover:bg-white/20"
                   >
+                    <PenLine className="h-3 w-3" />
                     编辑
                   </button>
                   <button
                     type="button"
                     onClick={() => removeBookmark(bookmark.id)}
-                    className="rounded-md bg-red-500/70 px-2 py-1 text-xs hover:bg-red-400"
+                    className="inline-flex items-center gap-1 rounded-md bg-red-500/70 px-2 py-1 text-xs hover:bg-red-400"
                   >
+                    <Trash2 className="h-3 w-3" />
                     删除
                   </button>
                 </div>

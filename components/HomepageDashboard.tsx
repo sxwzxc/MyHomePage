@@ -90,7 +90,7 @@ async function fetchWeatherByCity(city: string): Promise<WeatherInfo> {
   };
 }
 
-function BookmarkIcon({ bookmark }: { bookmark: Bookmark }) {
+function BookmarkAvatar({ bookmark }: { bookmark: Bookmark }) {
   const icon = bookmark.icon?.trim() || '';
 
   if (!icon) {
@@ -296,6 +296,7 @@ export default function HomepageDashboard() {
         title,
         url: normalizedUrl,
         icon: favicon || undefined,
+        isCustomIcon: false,
       };
 
       // Save to config
@@ -510,7 +511,7 @@ export default function HomepageDashboard() {
               >
                 <a href={bookmark.url} target="_blank" rel="noopener noreferrer">
                   <div className="mb-3 flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-fuchsia-500/20 transition group-hover:scale-110">
-                    <BookmarkIcon bookmark={bookmark} />
+                    <BookmarkAvatar bookmark={bookmark} />
                   </div>
                   <h3 className="truncate font-medium text-slate-100 transition group-hover:text-cyan-400">
                     {bookmark.title}
