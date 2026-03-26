@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Newspaper,
   ExternalLink,
@@ -8,7 +8,6 @@ import {
   GitFork,
   TrendingUp,
   RefreshCcw,
-  Globe2,
   Clock3,
 } from 'lucide-react';
 import {
@@ -38,15 +37,10 @@ const TIMEFRAME_OPTIONS: Array<{ id: Timeframe; label: string }> = [
   { id: 'monthly', label: '本月' },
 ];
 
-const LANGUAGE_OPTIONS: Array<{ id: string; label: string }> = [
-  { id: '', label: '全部语言' },
-  { id: 'typescript', label: 'TypeScript' },
-  { id: 'javascript', label: 'JavaScript' },
-  { id: 'python', label: 'Python' },
-  { id: 'go', label: 'Go' },
-  { id: 'java', label: 'Java' },
-  { id: 'rust', label: 'Rust' },
-];
+const FIXED_LANGUAGE = '';
+const DEV_FUNCTIONS_HOST =
+  process.env.NEXT_PUBLIC_FUNCTIONS_HOST?.trim() || 'http://localhost:8088';
+const FUNCTIONS_HOST = process.env.NODE_ENV === 'development' ? DEV_FUNCTIONS_HOST : '';
 
 async function fetchTrendingRepos({
   since,
@@ -60,7 +54,9 @@ async function fetchTrendingRepos({
     language: language ?? '',
   });
 
-  const response = await fetch(`https://api.gitterapp.com/repositories?${params.toString()}`);
+  const response = await fetch(`${FUNCTIONS_HOST}/news?${params.toString()}`, {
+    cache: 'no-store',
+  });
 
   if (!response.ok) {
     throw new Error('获取热点新闻失败');
@@ -88,9 +84,13 @@ export default function NewsSection({
     defaultCollapsed ? '' : 'news-content'
   );
   const [timeframe, setTimeframe] = useState<Timeframe>('daily');
-  const [language, setLanguage] = useState<string>('');
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const onCollapsedChangeRef = useRef(onCollapsedChange);
+
+  useEffect(() => {
+    onCollapsedChangeRef.current = onCollapsedChange;
+  }, [onCollapsedChange]);
 
   useEffect(() => {
     if (!enabled) {
@@ -104,7 +104,7 @@ export default function NewsSection({
       setError(null);
 
       try {
-        const repos = await fetchTrendingRepos({ since: timeframe, language });
+        const repos = await fetchTrendingRepos({ since: timeframe, language: FIXED_LANGUAGE });
         if (!cancelled) {
           setNews(repos);
           setLastUpdatedAt(new Date());
@@ -125,12 +125,12 @@ export default function NewsSection({
     return () => {
       cancelled = true;
     };
-  }, [enabled, timeframe, language, refreshNonce]);
+  }, [enabled, timeframe, refreshNonce]);
 
   useEffect(() => {
     const isCollapsed = accordionValue === '';
-    onCollapsedChange(isCollapsed);
-  }, [accordionValue, onCollapsedChange]);
+    onCollapsedChangeRef.current(isCollapsed);
+  }, [accordionValue]);
 
   if (!enabled) {
     return null;
@@ -209,21 +209,9 @@ export default function NewsSection({
                 ))}
               </div>
 
-              <label className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
-                <Globe2 className="h-3.5 w-3.5" />
-                <span className="whitespace-nowrap">筛选语言</span>
-                <select
-                  value={language}
-                  onChange={(event) => setLanguage(event.target.value)}
-                  className="rounded-md border border-white/10 bg-slate-900/70 px-2 py-1 text-xs text-white outline-none focus:border-white/50"
-                >
-                  {LANGUAGE_OPTIONS.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+                语言：全部
+              </span>
             </div>
           </div>
 
