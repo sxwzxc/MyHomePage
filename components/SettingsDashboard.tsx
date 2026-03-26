@@ -1118,7 +1118,7 @@ export default function SettingsDashboard() {
                 className="group rounded-xl border border-white/10 bg-slate-900/70 p-3 transition hover:border-cyan-400/60"
               >
                 <a href={bookmark.url} target="_blank" rel="noopener noreferrer">
-                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/10">
+                  <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20">
                     <BookmarkIconPreview bookmark={bookmark} />
                   </div>
                   <div className="mb-1 flex items-center justify-between gap-2">

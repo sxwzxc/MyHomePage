@@ -1060,7 +1060,7 @@ export default function HomepageDashboard() {
                   className={isCompactMode ? 'flex items-center gap-3' : 'block'}
                 >
                   <div
-                    className={`flex items-center justify-center rounded-xl bg-white/10 ${
+                    className={`flex items-center justify-center rounded-xl bg-white/20 ${
                       isCompactMode
                         ? 'h-12 w-12 shrink-0'
                         : 'mb-3 h-14 w-14 transition group-hover:scale-105'
