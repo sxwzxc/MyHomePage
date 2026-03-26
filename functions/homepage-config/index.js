@@ -397,6 +397,21 @@ async function handlePost({ request, env }) {
   try {
     const body = await request.json();
     const normalized = normalizeConfig(body);
+
+    let currentConfig = null;
+    try {
+      const currentRaw = await kv.get(CONFIG_KEY);
+      if (currentRaw) {
+        currentConfig = normalizeConfig(JSON.parse(currentRaw));
+      }
+    } catch {
+      currentConfig = null;
+    }
+
+    if (currentConfig && normalized.version < currentConfig.version) {
+      return jsonResponse(currentConfig);
+    }
+
     const nextConfig = {
       ...normalized,
       version: normalized.version + 1,
