@@ -934,9 +934,6 @@ export default function HomepageDashboard() {
                 <h2 className="text-shadow-title text-xl font-semibold text-white">
                   想搜点什么？
                 </h2>
-                <p className="text-sm text-white/80">
-                  支持 {config.searchEngines.length} 个搜索引擎，回车即可跳转。
-                </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
