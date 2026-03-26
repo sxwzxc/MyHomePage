@@ -8,7 +8,12 @@ const NEWS_CACHE_CHUNK_PREFIX = 'homepage:news:cache:v2:chunk:';
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_FETCH_LIMIT = 30;
 const CACHE_CHUNK_MAX_BYTES = 20 * 1024 * 1024;
-const SOURCE_FETCH_TIMEOUT_MS = 12 * 1000;
+const SOURCE_FETCH_TIMEOUT_MS = 300 * 1000;
+const EO_TIMEOUT_SETTING = {
+  connectTimeout: 300000,
+  readTimeout: 300000,
+  writeTimeout: 300000,
+};
 
 const NEWS_SOURCES = {
   s60: { id: 's60', label: '60s 读懂世界', endpoint: '/v2/60s' },
@@ -433,6 +438,9 @@ async function fetchFromSourceHost(source, host, limit) {
   try {
     response = await fetch(requestUrl.toString(), {
       signal: controller.signal,
+      eo: {
+        timeoutSetting: EO_TIMEOUT_SETTING,
+      },
       headers: {
         accept: 'application/json',
       },
