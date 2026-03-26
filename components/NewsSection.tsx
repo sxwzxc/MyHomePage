@@ -32,9 +32,25 @@ type NewsItem = {
   sourceLabel: string;
 };
 
+type NewsSourcePayload = {
+  sourceId: NewsSourceId;
+  sourceLabel: string;
+  host: string;
+  items: NewsItem[];
+};
+
+type NewsCacheMeta = {
+  from: 'kv' | 'origin';
+  isStale: boolean;
+  updatedAt: string;
+  expiresAt: string;
+  ttlMinutes: number;
+};
+
 const DEV_FUNCTIONS_HOST =
   process.env.NEXT_PUBLIC_FUNCTIONS_HOST?.trim() || 'http://localhost:8088';
 const FUNCTIONS_HOST = process.env.NODE_ENV === 'development' ? DEV_FUNCTIONS_HOST : '';
+const WEB_CACHE_TTL_MS = 30 * 60 * 1000;
 
 type NewsApiResponse = {
   mode: NewsSourceMode;
@@ -42,23 +58,106 @@ type NewsApiResponse = {
   activeSourceLabel: string;
   host: string;
   items: NewsItem[];
+  sources: NewsSourcePayload[];
   warnings?: string[];
+  cache: NewsCacheMeta;
 };
+
+type WebCacheEntry = {
+  fetchedAt: number;
+  data: NewsApiResponse;
+};
+
+const webCacheByLimit = new Map<number, WebCacheEntry>();
+
+function getWebCache(limit: number): NewsApiResponse | null {
+  const cached = webCacheByLimit.get(limit);
+  if (!cached) {
+    return null;
+  }
+
+  if (Date.now() - cached.fetchedAt > WEB_CACHE_TTL_MS) {
+    webCacheByLimit.delete(limit);
+    return null;
+  }
+
+  return cached.data;
+}
+
+function setWebCache(limit: number, data: NewsApiResponse) {
+  webCacheByLimit.set(limit, {
+    fetchedAt: Date.now(),
+    data,
+  });
+}
+
+function pickSourceFromBundle(
+  payload: NewsApiResponse,
+  sourceMode: NewsSourceMode,
+  sourceId: NewsSourceId
+): NewsSourcePayload {
+  const byId = new Map(payload.sources.map((source) => [source.sourceId, source]));
+
+  if (sourceMode === 'manual') {
+    return (
+      byId.get(sourceId) ||
+      byId.get(payload.activeSourceId) ||
+      payload.sources[0] || {
+        sourceId,
+        sourceLabel: '未知来源',
+        host: '',
+        items: [],
+      }
+    );
+  }
+
+  for (const option of NEWS_SOURCE_OPTIONS) {
+    const candidate = byId.get(option.id);
+    if (candidate && candidate.items.length > 0) {
+      return candidate;
+    }
+  }
+
+  return (
+    byId.get(payload.activeSourceId) ||
+    payload.sources[0] || {
+      sourceId: payload.activeSourceId,
+      sourceLabel: payload.activeSourceLabel,
+      host: payload.host,
+      items: payload.items,
+    }
+  );
+}
 
 async function fetchNewsFeed({
   sourceMode,
   sourceId,
   limit,
+  refresh,
+  allowWebCache,
 }: {
   sourceMode: NewsSourceMode;
   sourceId: NewsSourceId;
   limit: number;
+  refresh: boolean;
+  allowWebCache: boolean;
 }): Promise<NewsApiResponse> {
+  if (allowWebCache && !refresh) {
+    const fromCache = getWebCache(limit);
+    if (fromCache) {
+      return fromCache;
+    }
+  }
+
   const source = sourceMode === 'auto' ? 'auto' : sourceId;
   const params = new URLSearchParams({
     source,
     limit: String(limit),
   });
+
+  if (refresh) {
+    params.set('refresh', '1');
+  }
 
   const response = await fetch(`${FUNCTIONS_HOST}/news?${params.toString()}`, {
     cache: 'no-store',
@@ -68,7 +167,9 @@ async function fetchNewsFeed({
     throw new Error('获取热点新闻失败');
   }
 
-  return (await response.json()) as NewsApiResponse;
+  const payload = (await response.json()) as NewsApiResponse;
+  setWebCache(limit, payload);
+  return payload;
 }
 
 type NewsSectionProps = {
@@ -90,6 +191,7 @@ export default function NewsSection({
 }: NewsSectionProps) {
   const [news, setNews] = useState<NewsItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
   const [accordionValue, setAccordionValue] = useState<string>(
@@ -99,15 +201,55 @@ export default function NewsSection({
   const [activeHost, setActiveHost] = useState<string>('');
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+  const [cachedUntil, setCachedUntil] = useState<Date | null>(null);
+  const [bundle, setBundle] = useState<NewsApiResponse | null>(null);
+
   const onConfigChangeRef = useRef(onConfigChange);
+  const sourceModeRef = useRef(sourceMode);
+  const sourceIdRef = useRef(sourceId);
+  const bundleRef = useRef<NewsApiResponse | null>(null);
 
   useEffect(() => {
     onConfigChangeRef.current = onConfigChange;
   }, [onConfigChange]);
 
   useEffect(() => {
+    sourceModeRef.current = sourceMode;
+    sourceIdRef.current = sourceId;
+  }, [sourceMode, sourceId]);
+
+  useEffect(() => {
     setAccordionValue(defaultCollapsed ? '' : 'news-content');
   }, [defaultCollapsed]);
+
+  const applyBundleToView = (payload: NewsApiResponse) => {
+    const active = pickSourceFromBundle(
+      payload,
+      sourceModeRef.current,
+      sourceIdRef.current
+    );
+
+    setNews(active.items);
+    setActiveSourceLabel(active.sourceLabel);
+    setActiveHost(active.host);
+
+    const warnings = [...(payload.warnings || [])];
+
+    if (sourceModeRef.current === 'manual' && active.items.length === 0) {
+      warnings.push(`来源 ${active.sourceLabel} 暂无可展示数据`);
+    }
+
+    if (payload.cache.isStale) {
+      warnings.unshift('当前为缓存内容，后台正在刷新，稍后会自动同步新内容');
+    }
+
+    setWarning(warnings[0] || null);
+
+    const updatedAt = Date.parse(payload.cache.updatedAt);
+    const expiresAt = Date.parse(payload.cache.expiresAt);
+    setLastUpdatedAt(Number.isFinite(updatedAt) ? new Date(updatedAt) : new Date());
+    setCachedUntil(Number.isFinite(expiresAt) ? new Date(expiresAt) : null);
+  };
 
   useEffect(() => {
     if (!enabled) {
@@ -117,22 +259,60 @@ export default function NewsSection({
     let cancelled = false;
 
     async function load() {
-      setIsLoading(true);
+      const hasBundle = Boolean(bundleRef.current);
+      setIsLoading(!hasBundle);
       setError(null);
       setWarning(null);
 
+      const isManualRefresh = refreshNonce > 0;
+
       try {
-        const result = await fetchNewsFeed({ sourceMode, sourceId, limit });
-        if (!cancelled) {
-          setNews(result.items);
-          setActiveSourceLabel(result.activeSourceLabel);
-          setActiveHost(result.host);
-          setWarning(result.warnings?.[0] || null);
-          setLastUpdatedAt(new Date());
+        const result = await fetchNewsFeed({
+          sourceMode: sourceModeRef.current,
+          sourceId: sourceIdRef.current,
+          limit,
+          refresh: isManualRefresh,
+          allowWebCache: !isManualRefresh,
+        });
+
+        if (cancelled) {
+          return;
+        }
+
+        bundleRef.current = result;
+        setBundle(result);
+        applyBundleToView(result);
+
+        if (result.cache.isStale && !isManualRefresh) {
+          setIsSyncing(true);
+          try {
+            const synced = await fetchNewsFeed({
+              sourceMode: sourceModeRef.current,
+              sourceId: sourceIdRef.current,
+              limit,
+              refresh: true,
+              allowWebCache: false,
+            });
+
+            if (!cancelled) {
+              bundleRef.current = synced;
+              setBundle(synced);
+              applyBundleToView(synced);
+            }
+          } catch {
+            // Keep stale content when sync fails; warning already shown.
+          } finally {
+            if (!cancelled) {
+              setIsSyncing(false);
+            }
+          }
+        } else {
+          setIsSyncing(false);
         }
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : '加载失败');
+          setIsSyncing(false);
         }
       } finally {
         if (!cancelled) {
@@ -146,7 +326,16 @@ export default function NewsSection({
     return () => {
       cancelled = true;
     };
-  }, [enabled, sourceMode, sourceId, limit, refreshNonce]);
+  }, [enabled, limit, refreshNonce]);
+
+  useEffect(() => {
+    if (!bundle || !enabled) {
+      return;
+    }
+
+    bundleRef.current = bundle;
+    applyBundleToView(bundle);
+  }, [bundle, enabled, sourceMode, sourceId]);
 
   useEffect(() => {
     const isCollapsed = accordionValue === '';
@@ -158,10 +347,11 @@ export default function NewsSection({
   }
 
   const handleManualRefresh = () => {
-    if (isLoading) {
+    if (isLoading || isSyncing) {
       return;
     }
 
+    webCacheByLimit.delete(limit);
     setRefreshNonce((value) => value + 1);
   };
 
@@ -170,8 +360,7 @@ export default function NewsSection({
       ? `自动（当前：${activeSourceLabel}）`
       : NEWS_SOURCE_OPTIONS.find((item) => item.id === sourceId)?.label || activeSourceLabel;
 
-  const hostDisplayName =
-    activeHost.replace(/^https?:\/\//, '') || '未返回';
+  const hostDisplayName = activeHost.replace(/^https?:\/\//, '') || '未返回';
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/15 bg-slate-900/60 p-5 shadow-lg backdrop-blur">
@@ -201,7 +390,12 @@ export default function NewsSection({
                 {lastUpdatedAt ? (
                   <span className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/75">
                     <Clock3 className="h-3 w-3" />
-                    {lastUpdatedAt.toLocaleTimeString('zh-CN', { hour12: false })}
+                    更新 {lastUpdatedAt.toLocaleTimeString('zh-CN', { hour12: false })}
+                  </span>
+                ) : null}
+                {cachedUntil ? (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/70">
+                    缓存至 {cachedUntil.toLocaleTimeString('zh-CN', { hour12: false })}
                   </span>
                 ) : null}
               </div>
@@ -209,11 +403,11 @@ export default function NewsSection({
                 <button
                   type="button"
                   onClick={handleManualRefresh}
-                  disabled={isLoading}
+                  disabled={isLoading || isSyncing}
                   className="flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/20 disabled:opacity-60"
                 >
-                  <RefreshCcw className="h-3.5 w-3.5" />
-                  {isLoading ? '刷新中...' : '刷新'}
+                  <RefreshCcw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+                  {isLoading ? '加载中...' : isSyncing ? '同步中...' : '刷新'}
                 </button>
                 <AccordionTrigger className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:bg-white/10 hover:no-underline">
                   {accordionValue === '' ? '展开' : '收起'}
