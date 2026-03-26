@@ -23,9 +23,25 @@ export type BackgroundConfig = {
   solidColor?: string;
 };
 
+export type NewsSourceMode = 'auto' | 'manual';
+
+export const NEWS_SOURCE_OPTIONS = [
+  { id: 'weibo', label: '微博热搜' },
+  { id: 'zhihu', label: '知乎话题' },
+  { id: 'toutiao', label: '头条热搜' },
+  { id: 'baidu-hot', label: '百度热搜' },
+  { id: 'it-news', label: 'IT 资讯' },
+  { id: 'hacker-news-top', label: 'Hacker News' },
+] as const;
+
+export type NewsSourceId = (typeof NEWS_SOURCE_OPTIONS)[number]['id'];
+
 export type NewsConfig = {
   enabled: boolean;
   collapsed: boolean;
+  sourceMode: NewsSourceMode;
+  sourceId: NewsSourceId;
+  limit: number;
 };
 
 export type HomepageConfig = {
@@ -110,6 +126,9 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   news: {
     enabled: true,
     collapsed: false,
+    sourceMode: 'auto',
+    sourceId: 'weibo',
+    limit: 10,
   },
 };
 
@@ -222,9 +241,21 @@ function normalizeNewsConfig(value: unknown): NewsConfig {
     return DEFAULT_HOMEPAGE_CONFIG.news;
   }
 
+  const sourceMode = value.sourceMode === 'manual' ? 'manual' : 'auto';
+  const sourceId = NEWS_SOURCE_OPTIONS.some((item) => item.id === value.sourceId)
+    ? (value.sourceId as NewsSourceId)
+    : DEFAULT_HOMEPAGE_CONFIG.news.sourceId;
+  const limitParsed = Number(value.limit);
+  const limit = Number.isFinite(limitParsed)
+    ? Math.max(5, Math.min(30, Math.round(limitParsed)))
+    : DEFAULT_HOMEPAGE_CONFIG.news.limit;
+
   return {
     enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
     collapsed: typeof value.collapsed === 'boolean' ? value.collapsed : false,
+    sourceMode,
+    sourceId,
+    limit,
   };
 }
 

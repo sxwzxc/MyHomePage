@@ -822,12 +822,15 @@ export default function HomepageDashboard() {
     }
   };
 
-  const handleNewsCollapsedChange = async (collapsed: boolean) => {
+  const handleNewsConfigChange = async (
+    patch: Partial<HomepageConfig['news']>
+  ) => {
+    const previousConfig = config;
     const nextConfig: HomepageConfig = {
       ...config,
       news: {
         ...config.news,
-        collapsed,
+        ...patch,
       },
       updatedAt: new Date().toISOString(),
     };
@@ -838,7 +841,7 @@ export default function HomepageDashboard() {
       const saved = await saveHomepageConfig(nextConfig);
       setConfig(saved);
     } catch (error) {
-      // Silent fail - user can still interact with the accordion
+      setConfig(previousConfig);
     }
   };
 
@@ -881,12 +884,18 @@ export default function HomepageDashboard() {
 
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="relative rounded-3xl border border-white/15 bg-slate-900/50 p-5 shadow-2xl backdrop-blur-md">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-            <div>
-              <h1 className="text-shadow-title text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-                {config.pageTitle}
-              </h1>
-              <p className="text-shadow-soft mt-1 text-sm text-white/95">{config.pageSubtitle}</p>
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex items-center gap-4">
+              <div className="rounded-3xl border border-white/20 bg-white/10 p-3 shadow-lg">
+                <AnalogClock time={now} size={132} />
+              </div>
+
+              <div>
+                <h1 className="text-shadow-title text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+                  {config.pageTitle}
+                </h1>
+                <p className="text-shadow-soft mt-1 text-sm text-white/95">{config.pageSubtitle}</p>
+              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-white/95">
@@ -916,9 +925,6 @@ export default function HomepageDashboard() {
                     <p className="text-shadow-title text-lg font-semibold">
                       {now.toLocaleTimeString('zh-CN', { hour12: false })}
                     </p>
-                  </div>
-                  <div className="rounded-full border border-white/20 bg-white/10 p-2 text-white/90">
-                    <AnalogClock time={now} size={40} />
                   </div>
                 </div>
               </div>
@@ -1160,7 +1166,10 @@ export default function HomepageDashboard() {
         <NewsSection
           enabled={config.news.enabled}
           defaultCollapsed={config.news.collapsed}
-          onCollapsedChange={handleNewsCollapsedChange}
+          sourceMode={config.news.sourceMode}
+          sourceId={config.news.sourceId}
+          limit={config.news.limit}
+          onConfigChange={handleNewsConfigChange}
         />
 
         {contextMenu && (

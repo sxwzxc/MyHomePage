@@ -4,8 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Newspaper,
   ExternalLink,
-  Star,
-  GitFork,
   TrendingUp,
   RefreshCcw,
   Clock3,
@@ -16,42 +14,50 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import {
+  NewsConfig,
+  NEWS_SOURCE_OPTIONS,
+  NewsSourceId,
+  NewsSourceMode,
+} from '@/lib/homepage-config';
 
-type TrendingRepo = {
-  author: string;
-  name: string;
-  url: string;
-  description: string;
-  language: string;
-  languageColor: string;
-  stars: number;
-  forks: number;
-  currentPeriodStars: number;
+type NewsItem = {
+  title: string;
+  link: string;
+  summary: string;
+  cover: string;
+  hot: string;
+  publishedAt: string;
+  sourceId: NewsSourceId;
+  sourceLabel: string;
 };
 
-type Timeframe = 'daily' | 'weekly' | 'monthly';
-
-const TIMEFRAME_OPTIONS: Array<{ id: Timeframe; label: string }> = [
-  { id: 'daily', label: '今日' },
-  { id: 'weekly', label: '本周' },
-  { id: 'monthly', label: '本月' },
-];
-
-const FIXED_LANGUAGE = '';
 const DEV_FUNCTIONS_HOST =
   process.env.NEXT_PUBLIC_FUNCTIONS_HOST?.trim() || 'http://localhost:8088';
 const FUNCTIONS_HOST = process.env.NODE_ENV === 'development' ? DEV_FUNCTIONS_HOST : '';
 
-async function fetchTrendingRepos({
-  since,
-  language,
+type NewsApiResponse = {
+  mode: NewsSourceMode;
+  activeSourceId: NewsSourceId;
+  activeSourceLabel: string;
+  host: string;
+  items: NewsItem[];
+  warnings?: string[];
+};
+
+async function fetchNewsFeed({
+  sourceMode,
+  sourceId,
+  limit,
 }: {
-  since: Timeframe;
-  language?: string;
-}): Promise<TrendingRepo[]> {
+  sourceMode: NewsSourceMode;
+  sourceId: NewsSourceId;
+  limit: number;
+}): Promise<NewsApiResponse> {
+  const source = sourceMode === 'auto' ? 'auto' : sourceId;
   const params = new URLSearchParams({
-    since,
-    language: language ?? '',
+    source,
+    limit: String(limit),
   });
 
   const response = await fetch(`${FUNCTIONS_HOST}/news?${params.toString()}`, {
@@ -62,35 +68,46 @@ async function fetchTrendingRepos({
     throw new Error('获取热点新闻失败');
   }
 
-  const data = (await response.json()) as TrendingRepo[];
-  return data.slice(0, 10);
+  return (await response.json()) as NewsApiResponse;
 }
 
 type NewsSectionProps = {
   enabled: boolean;
   defaultCollapsed: boolean;
-  onCollapsedChange: (collapsed: boolean) => void;
+  sourceMode: NewsSourceMode;
+  sourceId: NewsSourceId;
+  limit: number;
+  onConfigChange: (patch: Partial<NewsConfig>) => void;
 };
 
 export default function NewsSection({
   enabled,
   defaultCollapsed,
-  onCollapsedChange,
+  sourceMode,
+  sourceId,
+  limit,
+  onConfigChange,
 }: NewsSectionProps) {
-  const [news, setNews] = useState<TrendingRepo[]>([]);
+  const [news, setNews] = useState<NewsItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [accordionValue, setAccordionValue] = useState<string>(
     defaultCollapsed ? '' : 'news-content'
   );
-  const [timeframe, setTimeframe] = useState<Timeframe>('daily');
+  const [activeSourceLabel, setActiveSourceLabel] = useState<string>('自动');
+  const [activeHost, setActiveHost] = useState<string>('');
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
-  const onCollapsedChangeRef = useRef(onCollapsedChange);
+  const onConfigChangeRef = useRef(onConfigChange);
 
   useEffect(() => {
-    onCollapsedChangeRef.current = onCollapsedChange;
-  }, [onCollapsedChange]);
+    onConfigChangeRef.current = onConfigChange;
+  }, [onConfigChange]);
+
+  useEffect(() => {
+    setAccordionValue(defaultCollapsed ? '' : 'news-content');
+  }, [defaultCollapsed]);
 
   useEffect(() => {
     if (!enabled) {
@@ -102,11 +119,15 @@ export default function NewsSection({
     async function load() {
       setIsLoading(true);
       setError(null);
+      setWarning(null);
 
       try {
-        const repos = await fetchTrendingRepos({ since: timeframe, language: FIXED_LANGUAGE });
+        const result = await fetchNewsFeed({ sourceMode, sourceId, limit });
         if (!cancelled) {
-          setNews(repos);
+          setNews(result.items);
+          setActiveSourceLabel(result.activeSourceLabel);
+          setActiveHost(result.host);
+          setWarning(result.warnings?.[0] || null);
           setLastUpdatedAt(new Date());
         }
       } catch (err) {
@@ -125,11 +146,11 @@ export default function NewsSection({
     return () => {
       cancelled = true;
     };
-  }, [enabled, timeframe, refreshNonce]);
+  }, [enabled, sourceMode, sourceId, limit, refreshNonce]);
 
   useEffect(() => {
     const isCollapsed = accordionValue === '';
-    onCollapsedChangeRef.current(isCollapsed);
+    onConfigChangeRef.current({ collapsed: isCollapsed });
   }, [accordionValue]);
 
   if (!enabled) {
@@ -140,8 +161,17 @@ export default function NewsSection({
     if (isLoading) {
       return;
     }
+
     setRefreshNonce((value) => value + 1);
   };
+
+  const sourceDisplayName =
+    sourceMode === 'auto'
+      ? `自动（当前：${activeSourceLabel}）`
+      : NEWS_SOURCE_OPTIONS.find((item) => item.id === sourceId)?.label || activeSourceLabel;
+
+  const hostDisplayName =
+    activeHost.replace(/^https?:\/\//, '') || '未返回';
 
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/15 bg-slate-900/60 p-5 shadow-lg backdrop-blur">
@@ -193,24 +223,45 @@ export default function NewsSection({
 
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
-                {TIMEFRAME_OPTIONS.map((option) => (
+                <button
+                  type="button"
+                  onClick={() => onConfigChangeRef.current({ sourceMode: 'auto' })}
+                  className={`rounded-lg px-3 py-1 text-xs transition ${
+                    sourceMode === 'auto'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-white/80 hover:bg-white/10'
+                  }`}
+                >
+                  自动
+                </button>
+
+                {NEWS_SOURCE_OPTIONS.map((option) => (
                   <button
                     key={option.id}
                     type="button"
-                    onClick={() => setTimeframe(option.id)}
+                    onClick={() =>
+                      onConfigChangeRef.current({
+                        sourceMode: 'manual',
+                        sourceId: option.id,
+                      })
+                    }
                     className={`rounded-lg px-3 py-1 text-xs transition ${
-                      timeframe === option.id
+                      sourceMode === 'manual' && sourceId === option.id
                         ? 'bg-white text-slate-900 shadow-sm'
                         : 'text-white/80 hover:bg-white/10'
                     }`}
                   >
-                    {option.label}
+                    {option.label.replace('热搜', '')}
                   </button>
                 ))}
               </div>
 
               <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
-                语言：全部
+                来源：{sourceDisplayName}
+              </span>
+
+              <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
+                节点：{hostDisplayName}
               </span>
             </div>
           </div>
@@ -245,6 +296,10 @@ export default function NewsSection({
                   重试
                 </button>
               </div>
+            ) : warning ? (
+              <div className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-3 text-sm text-amber-100">
+                {warning}
+              </div>
             ) : news.length === 0 ? (
               <div className="py-4 text-center text-sm text-white/70">
                 暂无热点新闻
@@ -252,58 +307,67 @@ export default function NewsSection({
             ) : (
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {news.map((repo, index) => (
-                  <a
-                    key={`${repo.author}-${repo.name}-${index}`}
-                    href={repo.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="group relative block overflow-hidden rounded-xl border border-white/10 bg-slate-950/50 p-4 transition-all hover:-translate-y-[1px] hover:border-white/30 hover:bg-slate-900/60"
+                  <div
+                    key={`${repo.sourceId}-${repo.link || repo.title}-${index}`}
+                    className="group relative overflow-hidden rounded-xl border border-white/10 bg-slate-950/50 p-4 transition-all hover:-translate-y-[1px] hover:border-white/30 hover:bg-slate-900/60"
                   >
                     <div className="absolute right-3 top-3 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-medium text-white/80">
                       #{index + 1}
                     </div>
-                    <div className="flex items-start gap-3">
-                      <div className="mt-1 rounded-full bg-white/10 p-2 text-cyan-300">
-                        <TrendingUp className="h-4 w-4" />
-                      </div>
+
+                    <div className="flex gap-3">
+                      {repo.cover ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={repo.cover}
+                          alt={repo.title}
+                          className="mt-1 h-16 w-20 shrink-0 rounded-lg border border-white/10 object-cover"
+                        />
+                      ) : (
+                        <div className="mt-1 flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white/10 text-cyan-300">
+                          <TrendingUp className="h-5 w-5" />
+                        </div>
+                      )}
+
                       <div className="min-w-0 flex-1">
-                        <h3 className="text-shadow-soft truncate text-sm font-semibold text-white group-hover:text-cyan-200">
-                          {repo.author} / {repo.name}
-                        </h3>
-                        {repo.description && (
-                          <p className="mt-1 line-clamp-2 text-xs text-white/75">
-                            {repo.description}
-                          </p>
+                        {repo.link ? (
+                          <a
+                            href={repo.link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex max-w-full items-start gap-1"
+                          >
+                            <h3 className="text-shadow-soft line-clamp-2 text-sm font-semibold text-white group-hover:text-cyan-200">
+                              {repo.title}
+                            </h3>
+                            <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/40 transition group-hover:text-white/70" />
+                          </a>
+                        ) : (
+                          <h3 className="text-shadow-soft line-clamp-2 text-sm font-semibold text-white">
+                            {repo.title}
+                          </h3>
                         )}
-                        <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-white/70">
-                          {repo.language && (
-                            <span className="flex items-center gap-1 rounded-full bg-white/5 px-2 py-1">
-                              <span
-                                className="h-2 w-2 rounded-full"
-                                style={{
-                                  backgroundColor: repo.languageColor || '#8b949e',
-                                }}
-                              />
-                              {repo.language}
+
+                        {repo.summary ? (
+                          <p className="mt-1 line-clamp-2 text-xs text-white/75">{repo.summary}</p>
+                        ) : null}
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+                          <span className="rounded-full bg-white/5 px-2 py-1">{repo.sourceLabel}</span>
+                          {repo.hot ? (
+                            <span className="rounded-full bg-cyan-500/20 px-2 py-1 text-cyan-100">
+                              {repo.hot}
                             </span>
-                          )}
-                          <span className="flex items-center gap-1">
-                            <Star className="h-3 w-3" />
-                            {repo.stars.toLocaleString()}
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <GitFork className="h-3 w-3" />
-                            {repo.forks.toLocaleString()}
-                          </span>
-                          <span className="flex items-center gap-1 text-cyan-300">
-                            <Star className="h-3 w-3" />+
-                            {repo.currentPeriodStars.toLocaleString()} today
-                          </span>
+                          ) : null}
+                          {repo.publishedAt ? (
+                            <span className="rounded-full bg-white/5 px-2 py-1">
+                              {repo.publishedAt}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
-                      <ExternalLink className="h-4 w-4 shrink-0 text-white/40 transition group-hover:text-white/70" />
                     </div>
-                  </a>
+                  </div>
                 ))}
               </div>
             )}

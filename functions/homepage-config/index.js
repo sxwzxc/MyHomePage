@@ -1,5 +1,14 @@
 const CONFIG_KEY = 'homepage:config:v1';
 
+const NEWS_SOURCE_IDS = new Set([
+  'weibo',
+  'zhihu',
+  'toutiao',
+  'baidu-hot',
+  'it-news',
+  'hacker-news-top',
+]);
+
 const DEFAULT_CONFIG = {
   version: 1,
   updatedAt: new Date(0).toISOString(),
@@ -54,6 +63,13 @@ const DEFAULT_CONFIG = {
     imageBlur: 5,
     imageOpacity: 80,
     gradientPreset: 'default',
+  },
+  news: {
+    enabled: true,
+    collapsed: false,
+    sourceMode: 'auto',
+    sourceId: 'weibo',
+    limit: 10,
   },
 };
 
@@ -197,6 +213,29 @@ function normalizeBackgroundConfig(value) {
   };
 }
 
+function normalizeNewsConfig(value) {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_CONFIG.news;
+  }
+
+  const sourceMode = value.sourceMode === 'manual' ? 'manual' : 'auto';
+  const sourceId = NEWS_SOURCE_IDS.has(value.sourceId)
+    ? value.sourceId
+    : DEFAULT_CONFIG.news.sourceId;
+  const parsedLimit = Number(value.limit);
+  const limit = Number.isFinite(parsedLimit)
+    ? Math.max(5, Math.min(30, Math.round(parsedLimit)))
+    : DEFAULT_CONFIG.news.limit;
+
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : true,
+    collapsed: typeof value.collapsed === 'boolean' ? value.collapsed : false,
+    sourceMode,
+    sourceId,
+    limit,
+  };
+}
+
 function normalizeBookmarkLayoutMode(value) {
   if (value === 'compact') {
     return 'compact';
@@ -232,6 +271,7 @@ function normalizeConfig(value) {
       searchEngines: [...DEFAULT_CONFIG.searchEngines],
       bookmarks: [...DEFAULT_CONFIG.bookmarks],
       background: { ...DEFAULT_CONFIG.background },
+      news: { ...DEFAULT_CONFIG.news },
     };
   }
 
@@ -269,6 +309,7 @@ function normalizeConfig(value) {
     searchEngines,
     bookmarks: normalizeBookmarks(value.bookmarks),
     background: normalizeBackgroundConfig(value.background),
+    news: normalizeNewsConfig(value.news),
   };
 }
 

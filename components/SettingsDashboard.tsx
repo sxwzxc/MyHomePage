@@ -10,6 +10,7 @@ import {
   SearchEngine,
   BackgroundConfig,
   BookmarkLayoutMode,
+  NEWS_SOURCE_OPTIONS,
   DEFAULT_HOMEPAGE_CONFIG,
 } from '@/lib/homepage-config';
 import {
@@ -831,8 +832,86 @@ export default function SettingsDashboard() {
               />
               在主页显示全球热点新闻
             </label>
+
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">来源模式</label>
+                <select
+                  className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none focus:border-cyan-400"
+                  value={config.news.sourceMode}
+                  onChange={(event) => {
+                    const sourceMode =
+                      event.target.value === 'manual' ? 'manual' : 'auto';
+                    updateConfig((prev) => ({
+                      ...prev,
+                      news: {
+                        ...prev.news,
+                        sourceMode,
+                      },
+                    }));
+                  }}
+                >
+                  <option value="auto">自动选择可用来源</option>
+                  <option value="manual">手动指定来源</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">手动来源</label>
+                <select
+                  className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none focus:border-cyan-400 disabled:opacity-60"
+                  value={config.news.sourceId}
+                  disabled={config.news.sourceMode !== 'manual'}
+                  onChange={(event) => {
+                    const sourceId = event.target.value;
+                    updateConfig((prev) => ({
+                      ...prev,
+                      news: {
+                        ...prev.news,
+                        sourceId: NEWS_SOURCE_OPTIONS.some((item) => item.id === sourceId)
+                          ? (sourceId as typeof prev.news.sourceId)
+                          : prev.news.sourceId,
+                      },
+                    }));
+                  }}
+                >
+                  {NEWS_SOURCE_OPTIONS.map((source) => (
+                    <option key={source.id} value={source.id}>
+                      {source.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">
+                  展示条数: {config.news.limit}
+                </label>
+                <input
+                  type="range"
+                  min="5"
+                  max="30"
+                  value={config.news.limit}
+                  onChange={(event) => {
+                    const nextLimit = Math.max(
+                      5,
+                      Math.min(30, Number(event.target.value))
+                    );
+                    updateConfig((prev) => ({
+                      ...prev,
+                      news: {
+                        ...prev.news,
+                        limit: nextLimit,
+                      },
+                    }));
+                  }}
+                  className="w-full"
+                />
+              </div>
+            </div>
+
             <p className="text-shadow-soft mt-2 text-xs text-white/85">
-              显示 GitHub 热门趋势项目作为全球热点新闻。新闻区域支持折叠/展开。
+              默认优先使用 news.shenxw.cn，自动模式会在来源异常时切换到其他可用来源。
             </p>
           </div>
         </article>
