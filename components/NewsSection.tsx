@@ -38,6 +38,9 @@ const TIMEFRAME_OPTIONS: Array<{ id: Timeframe; label: string }> = [
 ];
 
 const FIXED_LANGUAGE = '';
+const DEV_FUNCTIONS_HOST =
+  process.env.NEXT_PUBLIC_FUNCTIONS_HOST?.trim() || 'http://localhost:8088';
+const FUNCTIONS_HOST = process.env.NODE_ENV === 'development' ? DEV_FUNCTIONS_HOST : '';
 
 async function fetchTrendingRepos({
   since,
@@ -51,8 +54,7 @@ async function fetchTrendingRepos({
     language: language ?? '',
   });
 
-  const functionsHost = process.env.NODE_ENV === 'development' ? 'http://localhost:8088' : '';
-  const response = await fetch(`${functionsHost}/news?${params.toString()}`, {
+  const response = await fetch(`${FUNCTIONS_HOST}/news?${params.toString()}`, {
     cache: 'no-store',
   });
 

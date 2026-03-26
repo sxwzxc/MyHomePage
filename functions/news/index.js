@@ -31,17 +31,20 @@ export async function onRequestGet({ request }) {
     const url = new URL(request.url);
     const since = normalizeSince(url.searchParams.get('since'));
     const language = normalizeLanguage(url.searchParams.get('language'));
-    const upstreamParams = new URLSearchParams({
-      since,
-      language,
-    });
+    const upstreamParams = new URLSearchParams({ since });
+    if (language) {
+      upstreamParams.set('language', language);
+    }
 
     const upstream = await fetch(
       `https://api.gitterapp.com/repositories?${upstreamParams.toString()}`
     );
 
     if (!upstream.ok) {
-      return jsonResponse({ error: 'upstream failed' }, 502);
+      return jsonResponse(
+        { error: `上游服务请求失败（HTTP ${upstream.status}）` },
+        502
+      );
     }
 
     const data = await upstream.json();
