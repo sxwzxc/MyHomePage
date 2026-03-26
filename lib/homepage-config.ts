@@ -26,12 +26,17 @@ export type BackgroundConfig = {
 export type NewsSourceMode = 'auto' | 'manual';
 
 export const NEWS_SOURCE_OPTIONS = [
-  { id: 'weibo', label: '微博热搜' },
-  { id: 'zhihu', label: '知乎话题' },
+  { id: 's60', label: '60s 读懂世界' },
   { id: 'toutiao', label: '头条热搜' },
+  { id: 'weibo', label: '微博热搜' },
+  { id: 'zhihu', label: '知乎热榜' },
+  { id: 'quark', label: '夸克热搜' },
   { id: 'baidu-hot', label: '百度热搜' },
-  { id: 'it-news', label: 'IT 资讯' },
-  { id: 'hacker-news-top', label: 'Hacker News' },
+  { id: 'bili', label: 'B 站热榜' },
+  { id: 'douyin', label: '抖音热榜' },
+  { id: 'rednote', label: '小红书热榜' },
+  { id: 'douban-weekly-movie', label: '豆瓣电影周榜' },
+  { id: 'dongchedi', label: '懂车帝热榜' },
 ] as const;
 
 export type NewsSourceId = (typeof NEWS_SOURCE_OPTIONS)[number]['id'];
@@ -41,6 +46,8 @@ export type NewsConfig = {
   collapsed: boolean;
   sourceMode: NewsSourceMode;
   sourceId: NewsSourceId;
+  enabledSourceIds: NewsSourceId[];
+  autoSwitchSeconds: number;
   limit: number;
 };
 
@@ -127,7 +134,9 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
     enabled: true,
     collapsed: false,
     sourceMode: 'auto',
-    sourceId: 'weibo',
+    sourceId: 's60',
+    enabledSourceIds: NEWS_SOURCE_OPTIONS.map((item) => item.id),
+    autoSwitchSeconds: 15,
     limit: 10,
   },
 };
@@ -242,9 +251,29 @@ function normalizeNewsConfig(value: unknown): NewsConfig {
   }
 
   const sourceMode = value.sourceMode === 'manual' ? 'manual' : 'auto';
-  const sourceId = NEWS_SOURCE_OPTIONS.some((item) => item.id === value.sourceId)
+  const allSourceIds = NEWS_SOURCE_OPTIONS.map((item) => item.id);
+  const enabledSourceIdsFromValue = Array.isArray(value.enabledSourceIds)
+    ? value.enabledSourceIds
+        .filter((item): item is NewsSourceId =>
+          NEWS_SOURCE_OPTIONS.some((option) => option.id === item)
+        )
+    : [];
+  const enabledSourceIds = Array.from(new Set(enabledSourceIdsFromValue));
+  const normalizedEnabledSourceIds =
+    enabledSourceIds.length > 0 ? enabledSourceIds : allSourceIds;
+
+  const preferredSourceId = NEWS_SOURCE_OPTIONS.some((item) => item.id === value.sourceId)
     ? (value.sourceId as NewsSourceId)
     : DEFAULT_HOMEPAGE_CONFIG.news.sourceId;
+  const sourceId = normalizedEnabledSourceIds.includes(preferredSourceId)
+    ? preferredSourceId
+    : normalizedEnabledSourceIds[0];
+
+  const switchSecondsParsed = Number(value.autoSwitchSeconds);
+  const autoSwitchSeconds = Number.isFinite(switchSecondsParsed)
+    ? Math.max(5, Math.min(300, Math.round(switchSecondsParsed)))
+    : DEFAULT_HOMEPAGE_CONFIG.news.autoSwitchSeconds;
+
   const limitParsed = Number(value.limit);
   const limit = Number.isFinite(limitParsed)
     ? Math.max(5, Math.min(30, Math.round(limitParsed)))
@@ -255,6 +284,8 @@ function normalizeNewsConfig(value: unknown): NewsConfig {
     collapsed: typeof value.collapsed === 'boolean' ? value.collapsed : false,
     sourceMode,
     sourceId,
+    enabledSourceIds: normalizedEnabledSourceIds,
+    autoSwitchSeconds,
     limit,
   };
 }

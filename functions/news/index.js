@@ -2,30 +2,40 @@ const PRIMARY_HOST = 'https://news.shenxw.cn';
 const FALLBACK_HOST = 'https://60s.viki.moe';
 const HOSTS = [PRIMARY_HOST, FALLBACK_HOST];
 
-const NEWS_CACHE_KEY = 'homepage:news:cache:v1';
+const NEWS_CACHE_KEY = 'homepage:news:cache:v2';
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_FETCH_LIMIT = 30;
 
 const NEWS_SOURCES = {
-  weibo: { id: 'weibo', label: '微博热搜', endpoint: '/v2/weibo' },
-  zhihu: { id: 'zhihu', label: '知乎话题', endpoint: '/v2/zhihu' },
+  s60: { id: 's60', label: '60s 读懂世界', endpoint: '/v2/60s' },
   toutiao: { id: 'toutiao', label: '头条热搜', endpoint: '/v2/toutiao' },
+  weibo: { id: 'weibo', label: '微博热搜', endpoint: '/v2/weibo' },
+  zhihu: { id: 'zhihu', label: '知乎热榜', endpoint: '/v2/zhihu' },
+  quark: { id: 'quark', label: '夸克热搜', endpoint: '/v2/quark' },
   'baidu-hot': { id: 'baidu-hot', label: '百度热搜', endpoint: '/v2/baidu/hot' },
-  'it-news': { id: 'it-news', label: 'IT 资讯', endpoint: '/v2/it-news' },
-  'hacker-news-top': {
-    id: 'hacker-news-top',
-    label: 'Hacker News',
-    endpoint: '/v2/hacker-news/top',
+  bili: { id: 'bili', label: 'B 站热榜', endpoint: '/v2/bili' },
+  douyin: { id: 'douyin', label: '抖音热榜', endpoint: '/v2/douyin' },
+  rednote: { id: 'rednote', label: '小红书热榜', endpoint: '/v2/rednote' },
+  'douban-weekly-movie': {
+    id: 'douban-weekly-movie',
+    label: '豆瓣电影周榜',
+    endpoint: '/v2/douban/weekly/movie',
   },
+  dongchedi: { id: 'dongchedi', label: '懂车帝热榜', endpoint: '/v2/dongchedi' },
 };
 
 const AUTO_SOURCE_ORDER = [
+  's60',
+  'toutiao',
   'weibo',
   'zhihu',
-  'toutiao',
+  'quark',
   'baidu-hot',
-  'it-news',
-  'hacker-news-top',
+  'bili',
+  'douyin',
+  'rednote',
+  'douban-weekly-movie',
+  'dongchedi',
 ];
 
 function jsonResponse(data, status = 200) {
@@ -89,12 +99,16 @@ function normalizeSource(value) {
   }
 
   const normalized = value.trim().toLowerCase();
+  if (normalized === '60s') {
+    return 's60';
+  }
+
   if (normalized === 'baidu') {
     return 'baidu-hot';
   }
 
-  if (normalized === 'hacker-news') {
-    return 'hacker-news-top';
+  if (normalized === 'douban') {
+    return 'douban-weekly-movie';
   }
 
   return Object.prototype.hasOwnProperty.call(NEWS_SOURCES, normalized)

@@ -1,12 +1,17 @@
 const CONFIG_KEY = 'homepage:config:v1';
 
 const NEWS_SOURCE_IDS = new Set([
+  's60',
+  'toutiao',
   'weibo',
   'zhihu',
-  'toutiao',
+  'quark',
   'baidu-hot',
-  'it-news',
-  'hacker-news-top',
+  'bili',
+  'douyin',
+  'rednote',
+  'douban-weekly-movie',
+  'dongchedi',
 ]);
 
 const DEFAULT_CONFIG = {
@@ -68,7 +73,9 @@ const DEFAULT_CONFIG = {
     enabled: true,
     collapsed: false,
     sourceMode: 'auto',
-    sourceId: 'weibo',
+    sourceId: 's60',
+    enabledSourceIds: Array.from(NEWS_SOURCE_IDS),
+    autoSwitchSeconds: 15,
     limit: 10,
   },
 };
@@ -219,9 +226,24 @@ function normalizeNewsConfig(value) {
   }
 
   const sourceMode = value.sourceMode === 'manual' ? 'manual' : 'auto';
-  const sourceId = NEWS_SOURCE_IDS.has(value.sourceId)
+  const enabledSourceIds = Array.isArray(value.enabledSourceIds)
+    ? Array.from(new Set(value.enabledSourceIds.filter((item) => NEWS_SOURCE_IDS.has(item))))
+    : [];
+  const normalizedEnabledSourceIds =
+    enabledSourceIds.length > 0 ? enabledSourceIds : Array.from(NEWS_SOURCE_IDS);
+
+  const preferredSourceId = NEWS_SOURCE_IDS.has(value.sourceId)
     ? value.sourceId
     : DEFAULT_CONFIG.news.sourceId;
+  const sourceId = normalizedEnabledSourceIds.includes(preferredSourceId)
+    ? preferredSourceId
+    : normalizedEnabledSourceIds[0];
+
+  const parsedAutoSwitchSeconds = Number(value.autoSwitchSeconds);
+  const autoSwitchSeconds = Number.isFinite(parsedAutoSwitchSeconds)
+    ? Math.max(5, Math.min(300, Math.round(parsedAutoSwitchSeconds)))
+    : DEFAULT_CONFIG.news.autoSwitchSeconds;
+
   const parsedLimit = Number(value.limit);
   const limit = Number.isFinite(parsedLimit)
     ? Math.max(5, Math.min(30, Math.round(parsedLimit)))
@@ -232,6 +254,8 @@ function normalizeNewsConfig(value) {
     collapsed: typeof value.collapsed === 'boolean' ? value.collapsed : false,
     sourceMode,
     sourceId,
+    enabledSourceIds: normalizedEnabledSourceIds,
+    autoSwitchSeconds,
     limit,
   };
 }

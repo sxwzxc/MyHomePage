@@ -11,6 +11,7 @@ import {
   BackgroundConfig,
   BookmarkLayoutMode,
   NEWS_SOURCE_OPTIONS,
+  NewsSourceId,
   DEFAULT_HOMEPAGE_CONFIG,
 } from '@/lib/homepage-config';
 import {
@@ -124,6 +125,13 @@ export default function SettingsDashboard() {
   const customIconCount = useMemo(
     () => config.bookmarks.length - refreshableBookmarks.length,
     [config.bookmarks.length, refreshableBookmarks.length]
+  );
+  const enabledNewsSourceOptions = useMemo(
+    () =>
+      NEWS_SOURCE_OPTIONS.filter((item) =>
+        config.news.enabledSourceIds.includes(item.id)
+      ),
+    [config.news.enabledSourceIds]
   );
 
   useEffect(() => {
@@ -847,11 +855,14 @@ export default function SettingsDashboard() {
                       news: {
                         ...prev.news,
                         sourceMode,
+                        sourceId: prev.news.enabledSourceIds.includes(prev.news.sourceId)
+                          ? prev.news.sourceId
+                          : (prev.news.enabledSourceIds[0] as NewsSourceId),
                       },
                     }));
                   }}
                 >
-                  <option value="auto">自动选择可用来源</option>
+                  <option value="auto">自动轮播已勾选来源</option>
                   <option value="manual">手动指定来源</option>
                 </select>
               </div>
@@ -868,19 +879,45 @@ export default function SettingsDashboard() {
                       ...prev,
                       news: {
                         ...prev.news,
-                        sourceId: NEWS_SOURCE_OPTIONS.some((item) => item.id === sourceId)
+                        sourceId: prev.news.enabledSourceIds.some((item) => item === sourceId)
                           ? (sourceId as typeof prev.news.sourceId)
                           : prev.news.sourceId,
                       },
                     }));
                   }}
                 >
-                  {NEWS_SOURCE_OPTIONS.map((source) => (
+                  {enabledNewsSourceOptions.map((source) => (
                     <option key={source.id} value={source.id}>
                       {source.label}
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs text-slate-300">
+                  自动切换间隔（秒）: {config.news.autoSwitchSeconds}
+                </label>
+                <input
+                  type="range"
+                  min="5"
+                  max="120"
+                  value={config.news.autoSwitchSeconds}
+                  onChange={(event) => {
+                    const nextSeconds = Math.max(
+                      5,
+                      Math.min(120, Number(event.target.value))
+                    );
+                    updateConfig((prev) => ({
+                      ...prev,
+                      news: {
+                        ...prev.news,
+                        autoSwitchSeconds: nextSeconds,
+                      },
+                    }));
+                  }}
+                  className="w-full"
+                />
               </div>
 
               <div>
@@ -910,8 +947,63 @@ export default function SettingsDashboard() {
               </div>
             </div>
 
+            <div className="mt-3">
+              <label className="mb-2 block text-xs text-slate-300">显示来源（默认全选）</label>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {NEWS_SOURCE_OPTIONS.map((source) => {
+                  const checked = config.news.enabledSourceIds.includes(source.id);
+
+                  return (
+                    <label
+                      key={source.id}
+                      className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-slate-900/60 px-3 py-2 text-xs text-slate-200"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(event) => {
+                          const shouldEnable = event.target.checked;
+
+                          updateConfig((prev) => {
+                            const current = prev.news.enabledSourceIds;
+                            let nextEnabled = current;
+
+                            if (shouldEnable) {
+                              if (!current.includes(source.id)) {
+                                nextEnabled = [...current, source.id];
+                              }
+                            } else {
+                              if (current.length <= 1) {
+                                return prev;
+                              }
+
+                              nextEnabled = current.filter((id) => id !== source.id);
+                            }
+
+                            const nextSourceId = nextEnabled.includes(prev.news.sourceId)
+                              ? prev.news.sourceId
+                              : (nextEnabled[0] as NewsSourceId);
+
+                            return {
+                              ...prev,
+                              news: {
+                                ...prev.news,
+                                enabledSourceIds: nextEnabled,
+                                sourceId: nextSourceId,
+                              },
+                            };
+                          });
+                        }}
+                      />
+                      {source.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
             <p className="text-shadow-soft mt-2 text-xs text-white/85">
-              默认优先使用 news.shenxw.cn，自动模式会在来源异常时切换到其他可用来源。
+              自动模式会在你勾选的来源之间轮播；可通过“自动切换间隔”控制轮播速度。
             </p>
           </div>
         </article>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Newspaper,
   ExternalLink,
@@ -94,9 +94,13 @@ function setWebCache(limit: number, data: NewsApiResponse) {
 function pickSourceFromBundle(
   payload: NewsApiResponse,
   sourceMode: NewsSourceMode,
-  sourceId: NewsSourceId
+  sourceId: NewsSourceId,
+  enabledSourceIds: NewsSourceId[],
+  autoSourceCursor: number
 ): NewsSourcePayload {
   const byId = new Map(payload.sources.map((source) => [source.sourceId, source]));
+  const fallbackSourceIds = NEWS_SOURCE_OPTIONS.map((item) => item.id);
+  const normalizedEnabledIds = enabledSourceIds.length > 0 ? enabledSourceIds : fallbackSourceIds;
 
   if (sourceMode === 'manual') {
     return (
@@ -109,6 +113,23 @@ function pickSourceFromBundle(
         items: [],
       }
     );
+  }
+
+  const withData = normalizedEnabledIds.filter(
+    (id) => (byId.get(id)?.items.length || 0) > 0
+  );
+  const candidateIds = withData.length > 0 ? withData : normalizedEnabledIds;
+
+  if (candidateIds.length > 0) {
+    const activeId = candidateIds[autoSourceCursor % candidateIds.length];
+    const candidate = byId.get(activeId);
+    if (candidate && candidate.items.length > 0) {
+      return candidate;
+    }
+
+    if (candidate) {
+      return candidate;
+    }
   }
 
   for (const option of NEWS_SOURCE_OPTIONS) {
@@ -177,6 +198,8 @@ type NewsSectionProps = {
   defaultCollapsed: boolean;
   sourceMode: NewsSourceMode;
   sourceId: NewsSourceId;
+  enabledSourceIds: NewsSourceId[];
+  autoSwitchSeconds: number;
   limit: number;
   onConfigChange: (patch: Partial<NewsConfig>) => void;
 };
@@ -186,6 +209,8 @@ export default function NewsSection({
   defaultCollapsed,
   sourceMode,
   sourceId,
+  enabledSourceIds,
+  autoSwitchSeconds,
   limit,
   onConfigChange,
 }: NewsSectionProps) {
@@ -203,11 +228,21 @@ export default function NewsSection({
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [cachedUntil, setCachedUntil] = useState<Date | null>(null);
   const [bundle, setBundle] = useState<NewsApiResponse | null>(null);
+  const [autoSourceCursor, setAutoSourceCursor] = useState(0);
 
   const onConfigChangeRef = useRef(onConfigChange);
   const sourceModeRef = useRef(sourceMode);
   const sourceIdRef = useRef(sourceId);
+  const enabledSourceIdsRef = useRef(enabledSourceIds);
+  const autoSourceCursorRef = useRef(autoSourceCursor);
   const bundleRef = useRef<NewsApiResponse | null>(null);
+
+  const visibleSourceOptions = useMemo(
+    () =>
+      NEWS_SOURCE_OPTIONS.filter((item) => enabledSourceIds.includes(item.id)),
+    [enabledSourceIds]
+  );
+  const enabledSourceKey = useMemo(() => enabledSourceIds.join('|'), [enabledSourceIds]);
 
   useEffect(() => {
     onConfigChangeRef.current = onConfigChange;
@@ -216,7 +251,12 @@ export default function NewsSection({
   useEffect(() => {
     sourceModeRef.current = sourceMode;
     sourceIdRef.current = sourceId;
-  }, [sourceMode, sourceId]);
+    enabledSourceIdsRef.current = enabledSourceIds;
+  }, [sourceMode, sourceId, enabledSourceIds]);
+
+  useEffect(() => {
+    autoSourceCursorRef.current = autoSourceCursor;
+  }, [autoSourceCursor]);
 
   useEffect(() => {
     setAccordionValue(defaultCollapsed ? '' : 'news-content');
@@ -226,7 +266,9 @@ export default function NewsSection({
     const active = pickSourceFromBundle(
       payload,
       sourceModeRef.current,
-      sourceIdRef.current
+      sourceIdRef.current,
+      enabledSourceIdsRef.current,
+      autoSourceCursorRef.current
     );
 
     setNews(active.items);
@@ -335,7 +377,30 @@ export default function NewsSection({
 
     bundleRef.current = bundle;
     applyBundleToView(bundle);
-  }, [bundle, enabled, sourceMode, sourceId]);
+  }, [bundle, enabled, sourceMode, sourceId, enabledSourceIds, autoSourceCursor]);
+
+  useEffect(() => {
+    setAutoSourceCursor(0);
+  }, [sourceMode, enabledSourceKey]);
+
+  useEffect(() => {
+    if (!enabled || sourceMode !== 'auto' || !bundle) {
+      return;
+    }
+
+    if (visibleSourceOptions.length <= 1) {
+      return;
+    }
+
+    const intervalMs = Math.max(5, Math.min(300, Math.round(autoSwitchSeconds))) * 1000;
+    const timer = window.setInterval(() => {
+      setAutoSourceCursor((value) => value + 1);
+    }, intervalMs);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [enabled, sourceMode, bundle, autoSwitchSeconds, visibleSourceOptions.length]);
 
   useEffect(() => {
     const isCollapsed = accordionValue === '';
@@ -358,7 +423,7 @@ export default function NewsSection({
   const sourceDisplayName =
     sourceMode === 'auto'
       ? `自动（当前：${activeSourceLabel}）`
-      : NEWS_SOURCE_OPTIONS.find((item) => item.id === sourceId)?.label || activeSourceLabel;
+      : visibleSourceOptions.find((item) => item.id === sourceId)?.label || activeSourceLabel;
 
   const hostDisplayName = activeHost.replace(/^https?:\/\//, '') || '未返回';
 
@@ -429,7 +494,7 @@ export default function NewsSection({
                   自动
                 </button>
 
-                {NEWS_SOURCE_OPTIONS.map((option) => (
+                {visibleSourceOptions.map((option) => (
                   <button
                     key={option.id}
                     type="button"
