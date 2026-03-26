@@ -5,10 +5,13 @@ const HOSTS = [PRIMARY_HOST, FALLBACK_HOST];
 const NEWS_CACHE_KEY = 'homepage:news:cache:v2';
 const NEWS_CACHE_META_KEY = 'homepage:news:cache:v2:meta';
 const NEWS_CACHE_CHUNK_PREFIX = 'homepage:news:cache:v2:chunk:';
+const NEWS_REFRESH_CURSOR_KEY = 'homepage:news:refresh:cursor:v1';
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_FETCH_LIMIT = 30;
 const CACHE_CHUNK_MAX_BYTES = 20 * 1024 * 1024;
 const SOURCE_FETCH_TIMEOUT_MS = 300 * 1000;
+const BACKGROUND_REFRESH_BATCH_SIZE = 2;
+const BACKGROUND_REFRESH_INTERVAL_MS = 2000;
 const EO_TIMEOUT_SETTING = {
   connectTimeout: 300000,
   readTimeout: 300000,
@@ -336,6 +339,16 @@ function getCacheChunkKey(index) {
   return `${NEWS_CACHE_CHUNK_PREFIX}${index}`;
 }
 
+function sleep(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 async function readChunkedCacheBundle(kv) {
   try {
     const metaRaw = await kv.get(NEWS_CACHE_META_KEY);
@@ -570,6 +583,53 @@ async function readNewsCache(kv) {
   }
 }
 
+async function readRefreshCursor(kv) {
+  if (!kv) {
+    return 0;
+  }
+
+  try {
+    const raw = await kv.get(NEWS_REFRESH_CURSOR_KEY);
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 0) {
+      return 0;
+    }
+
+    return parsed % AUTO_SOURCE_ORDER.length;
+  } catch {
+    return 0;
+  }
+}
+
+async function writeRefreshCursor(kv, cursor) {
+  if (!kv) {
+    return;
+  }
+
+  const normalized =
+    Number.isInteger(cursor) && cursor >= 0
+      ? cursor % AUTO_SOURCE_ORDER.length
+      : 0;
+
+  try {
+    await kv.put(NEWS_REFRESH_CURSOR_KEY, String(normalized));
+  } catch {
+    // Ignore cursor write failures.
+  }
+}
+
+function getSourceBatchByCursor(cursor, batchSize) {
+  const total = AUTO_SOURCE_ORDER.length;
+  if (total === 0) {
+    return [];
+  }
+
+  const size = Math.max(1, Math.min(total, Math.round(batchSize)));
+  const start = Number.isInteger(cursor) ? ((cursor % total) + total) % total : 0;
+
+  return Array.from({ length: size }, (_, offset) => AUTO_SOURCE_ORDER[(start + offset) % total]);
+}
+
 function isCacheExpired(bundle) {
   if (!bundle) {
     return true;
@@ -591,6 +651,76 @@ async function refreshNewsCache(kv) {
   }
 
   return fresh;
+}
+
+async function refreshNewsCacheBatch(kv, options = {}) {
+  if (!kv) {
+    return refreshNewsCache(kv);
+  }
+
+  const batchSize = Math.max(
+    1,
+    Math.min(
+      AUTO_SOURCE_ORDER.length,
+      Math.round(options.batchSize || BACKGROUND_REFRESH_BATCH_SIZE)
+    )
+  );
+  const intervalMs = Math.max(0, Math.round(options.intervalMs || BACKGROUND_REFRESH_INTERVAL_MS));
+
+  const baseBundle = (await readNewsCache(kv)) || {
+    version: 1,
+    updatedAt: new Date(0).toISOString(),
+    expiresAt: new Date(0).toISOString(),
+    sources: {},
+  };
+
+  const cursor = await readRefreshCursor(kv);
+  const targetSourceIds = getSourceBatchByCursor(cursor, batchSize);
+  const warnings = [];
+
+  const nextSources = {
+    ...baseBundle.sources,
+  };
+
+  for (let index = 0; index < targetSourceIds.length; index += 1) {
+    const sourceId = targetSourceIds[index];
+    const fetched = await fetchSourceFromHosts(sourceId, CACHE_FETCH_LIMIT);
+
+    nextSources[sourceId] = {
+      sourceId: fetched.source.id,
+      sourceLabel: fetched.source.label,
+      host: fetched.host,
+      items: fetched.items,
+    };
+
+    if (!fetched.ok) {
+      warnings.push(
+        `来源 ${fetched.source.label} 请求失败：${fetched.errors[0] || '未知错误'}`
+      );
+    } else if (fetched.items.length === 0) {
+      warnings.push(`来源 ${fetched.source.label} 暂无可展示内容`);
+    }
+
+    if (index < targetSourceIds.length - 1 && intervalMs > 0) {
+      await sleep(intervalMs);
+    }
+  }
+
+  const now = Date.now();
+  const nextBundle = {
+    version: 1,
+    updatedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + CACHE_TTL_MS).toISOString(),
+    sources: nextSources,
+  };
+
+  await writeChunkedCacheBundle(kv, nextBundle);
+  await writeRefreshCursor(kv, cursor + targetSourceIds.length);
+
+  return {
+    ...nextBundle,
+    warnings,
+  };
 }
 
 async function refreshSingleSourceCache(kv, sourceId) {
@@ -755,7 +885,7 @@ export async function onRequestGet(context) {
     const cacheExpired = isCacheExpired(cacheBundle);
 
     if (forceRefresh) {
-      const refreshPromise = refreshNewsCache(kv);
+      const refreshPromise = refreshNewsCacheBatch(kv);
       const backgroundScheduled = scheduleBackgroundRefresh(context, refreshPromise);
 
       if (hasCache && backgroundScheduled) {
@@ -844,7 +974,7 @@ export async function onRequestGet(context) {
       );
     }
 
-    const refreshPromise = refreshNewsCache(kv);
+    const refreshPromise = refreshNewsCacheBatch(kv);
     const backgroundScheduled = scheduleBackgroundRefresh(context, refreshPromise);
 
     if (!backgroundScheduled) {

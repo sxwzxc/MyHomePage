@@ -5,7 +5,6 @@ import {
   Newspaper,
   ExternalLink,
   TrendingUp,
-  RefreshCcw,
   Clock3,
 } from 'lucide-react';
 import {
@@ -493,15 +492,6 @@ export default function NewsSection({
                 ) : null}
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleManualRefresh}
-                  disabled={isLoading || isSyncing}
-                  className="flex items-center gap-1 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-medium text-white/90 transition hover:bg-white/20 disabled:opacity-60"
-                >
-                  <RefreshCcw className={`h-3.5 w-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-                  {isLoading ? '加载中...' : isSyncing ? '同步中...' : '刷新'}
-                </button>
                 <AccordionTrigger className="rounded-lg border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80 transition hover:bg-white/10 hover:no-underline">
                   {accordionValue === '' ? '展开' : '收起'}
                 </AccordionTrigger>
