@@ -1,4 +1,4 @@
-const PRIMARY_HOST = 'https://news.shenxw.cn';
+const PRIMARY_HOST = 'https://news.sxwzxc.cn';
 const FALLBACK_HOST = 'https://60s.viki.moe';
 const HOSTS = [PRIMARY_HOST, FALLBACK_HOST];
 
