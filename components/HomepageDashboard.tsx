@@ -154,7 +154,6 @@ export default function HomepageDashboard() {
   const [selectedEngineId, setSelectedEngineId] = useState(
     DEFAULT_HOMEPAGE_CONFIG.defaultSearchEngineId
   );
-  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [visitCount, setVisitCount] = useState<number | null>(null);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
@@ -242,7 +241,6 @@ export default function HomepageDashboard() {
     let cancelled = false;
 
     async function load() {
-      setIsLoading(true);
       setLoadError(null);
 
       try {
@@ -261,10 +259,6 @@ export default function HomepageDashboard() {
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '加载失败');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoading(false);
         }
       }
     }
@@ -320,7 +314,7 @@ export default function HomepageDashboard() {
   }, []);
 
   useEffect(() => {
-    if (isLoading || autoFaviconRefreshRunningRef.current) {
+    if (autoFaviconRefreshRunningRef.current) {
       return;
     }
 
@@ -381,7 +375,6 @@ export default function HomepageDashboard() {
     })();
   }, [
     config,
-    isLoading,
     autoFaviconRefreshRunningRef,
   ]);
 
@@ -844,17 +837,6 @@ export default function HomepageDashboard() {
       setConfig(previousConfig);
     }
   };
-
-  if (isLoading) {
-    return (
-      <section className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
-        <AnimatedBackground config={DEFAULT_HOMEPAGE_CONFIG.background} />
-        <div className="relative rounded-2xl border border-white/20 bg-white/10 px-6 py-5 text-white shadow-xl backdrop-blur-sm">
-          正在加载主页配置...
-        </div>
-      </section>
-    );
-  }
 
   return (
     <section className="relative min-h-screen overflow-hidden px-4 py-8 text-white sm:px-6 lg:px-10">

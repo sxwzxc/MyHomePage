@@ -75,7 +75,6 @@ export default function SettingsDashboard() {
   const [accessChecked, setAccessChecked] = useState(false);
   const [accessAllowed, setAccessAllowed] = useState(false);
   const [config, setConfig] = useState<HomepageConfig>(DEFAULT_HOMEPAGE_CONFIG);
-  const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
@@ -153,7 +152,6 @@ export default function SettingsDashboard() {
     let cancelled = false;
 
     async function loadConfig() {
-      setIsLoadingConfig(true);
       setLoadError(null);
 
       try {
@@ -175,10 +173,6 @@ export default function SettingsDashboard() {
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '配置加载失败');
-        }
-      } finally {
-        if (!cancelled) {
-          setIsLoadingConfig(false);
         }
       }
     }
@@ -504,16 +498,6 @@ export default function SettingsDashboard() {
 
   if (!accessAllowed) {
     return null;
-  }
-
-  if (isLoadingConfig) {
-    return (
-      <section className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
-        <div className="rounded-2xl border border-white/20 bg-white/10 px-6 py-5 text-white shadow-xl backdrop-blur-sm">
-          正在加载设置...
-        </div>
-      </section>
-    );
   }
 
   return (

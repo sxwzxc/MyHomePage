@@ -14,32 +14,83 @@ function getFunctionsHost() {
   return process.env.NODE_ENV === 'development' ? 'http://localhost:8088' : '';
 }
 
+const REQUEST_TIMEOUT_MS = 8000;
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const host = getFunctionsHost();
   const method = init?.method ?? 'GET';
   const hasBody = typeof init?.body !== 'undefined';
 
-  const res = await fetch(`${host}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.headers ?? {}),
-      ...(hasBody || method !== 'GET'
-        ? { 'content-type': 'application/json' }
-        : {}),
-    },
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  const data = await res.json();
+  try {
+    const res = await fetch(`${host}${path}`, {
+      ...init,
+      signal: controller.signal,
+      headers: {
+        ...(init?.headers ?? {}),
+        ...(hasBody || method !== 'GET'
+          ? { 'content-type': 'application/json' }
+          : {}),
+      },
+    });
 
-  if (!res.ok || (data && typeof data === 'object' && 'error' in data)) {
-    const message =
-      data && typeof data === 'object' && 'error' in data
-        ? String(data.error)
-        : `Request failed with status ${res.status}`;
-    throw new Error(message);
+    const data = await res.json();
+
+    if (!res.ok || (data && typeof data === 'object' && 'error' in data)) {
+      const message =
+        data && typeof data === 'object' && 'error' in data
+          ? String(data.error)
+          : `Request failed with status ${res.status}`;
+      throw new Error(message);
+    }
+
+    return data as T;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Request timed out');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
+}
 
-  return data as T;
+const CONFIG_CACHE_KEY = 'homepage_config_cache';
+const CONFIG_CACHE_TTL_MS = 30_000;
+
+function readConfigCache(): HomepageConfig | null {
+  try {
+    if (typeof sessionStorage === 'undefined') return null;
+    const raw = sessionStorage.getItem(CONFIG_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof parsed.timestamp === 'number' &&
+      typeof parsed.data === 'object' &&
+      Date.now() - parsed.timestamp < CONFIG_CACHE_TTL_MS
+    ) {
+      return normalizeHomepageConfig(parsed.data);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function writeConfigCache(config: HomepageConfig): void {
+  try {
+    if (typeof sessionStorage === 'undefined') return;
+    sessionStorage.setItem(
+      CONFIG_CACHE_KEY,
+      JSON.stringify({ data: config, timestamp: Date.now() })
+    );
+  } catch {
+    // ignore storage quota errors
+  }
 }
 
 export async function getVisitCount(): Promise<number> {
@@ -56,8 +107,12 @@ export async function getHomepageConfig(): Promise<HomepageConfig> {
       method: 'GET',
     });
 
-    return normalizeHomepageConfig(data);
+    const config = normalizeHomepageConfig(data);
+    writeConfigCache(config);
+    return config;
   } catch {
+    const cached = readConfigCache();
+    if (cached) return cached;
     return {
       ...DEFAULT_HOMEPAGE_CONFIG,
       searchEngines: [...DEFAULT_HOMEPAGE_CONFIG.searchEngines],
@@ -74,7 +129,9 @@ export async function saveHomepageConfig(
     body: JSON.stringify(config),
   });
 
-  return normalizeHomepageConfig(data);
+  const normalized = normalizeHomepageConfig(data);
+  writeConfigCache(normalized);
+  return normalized;
 }
 
 export async function fetchBookmarkFavicon(url: string): Promise<string | null> {
