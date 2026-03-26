@@ -69,6 +69,15 @@ function asIsoString(value, fallback = '') {
   return Number.isFinite(time) ? new Date(time).toISOString() : fallback;
 }
 
+function isAbortError(error) {
+  return (
+    Boolean(error) &&
+    typeof error === 'object' &&
+    'name' in error &&
+    error.name === 'AbortError'
+  );
+}
+
 function getKvBinding(env) {
   if (env && env.myhomepage) {
     return env.myhomepage;
@@ -429,7 +438,7 @@ async function fetchFromSourceHost(source, host, limit) {
       },
     });
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') {
+    if (isAbortError(error)) {
       throw new Error(`请求超时(${SOURCE_FETCH_TIMEOUT_MS}ms)`);
     }
 

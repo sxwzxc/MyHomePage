@@ -16,6 +16,15 @@ function getFunctionsHost() {
 
 const REQUEST_TIMEOUT_MS = 30000;
 
+function isAbortError(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      'name' in error &&
+      (error as { name?: unknown }).name === 'AbortError'
+  );
+}
+
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const host = getFunctionsHost();
   const method = init?.method ?? 'GET';
@@ -48,7 +57,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 
     return data as T;
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
+    if (isAbortError(err)) {
       throw new Error('Request timed out');
     }
     throw err;
