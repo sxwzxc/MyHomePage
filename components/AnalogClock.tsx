@@ -1,6 +1,6 @@
 'use client';
 
-import { useId } from 'react';
+import { useEffect, useRef } from 'react';
 
 interface AnalogClockProps {
   time: Date;
@@ -8,197 +8,221 @@ interface AnalogClockProps {
   className?: string;
 }
 
-export default function AnalogClock({ time, size = 40, className = '' }: AnalogClockProps) {
-  // Unique prefix so multiple clock instances on the same page don't share SVG IDs
-  const uid = useId().replace(/:/g, '-');
+function toAngle(ratio: number): number {
+  return ratio * Math.PI * 2 - Math.PI / 2;
+}
 
-  const hours = time.getHours();
-  const minutes = time.getMinutes();
-  const seconds = time.getSeconds();
+function drawClock(ctx: CanvasRenderingContext2D, size: number, time: Date) {
+  const cx = size / 2;
+  const cy = size / 2;
+  const radius = size * 0.47;
+
+  const hour = time.getHours();
+  const minute = time.getMinutes();
+  const second = time.getSeconds();
   const ms = time.getMilliseconds();
 
-  // Smooth angle calculations (continuous movement)
-  const secondAngle = ((seconds + ms / 1000) / 60) * 360;
-  const minuteAngle = ((minutes + (seconds + ms / 1000) / 60) / 60) * 360;
-  const hourAngle = (((hours % 12) + minutes / 60 + seconds / 3600) / 12) * 360;
+  // background
+  ctx.clearRect(0, 0, size, size);
+  const bgGradient = ctx.createRadialGradient(cx - radius * 0.2, cy - radius * 0.3, 0, cx, cy, radius * 1.2);
+  bgGradient.addColorStop(0, '#1e293b');
+  bgGradient.addColorStop(0.6, '#0f172a');
+  bgGradient.addColorStop(1, '#020617');
+  ctx.fillStyle = bgGradient;
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
 
-  // SVG uses a 100×100 viewBox with centre at (50,50)
-  const cx = 50;
-  const cy = 50;
-  const r = 47; // outer face radius
+  // bezel
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.75)';
+  ctx.lineWidth = Math.max(1.2, size * 0.01);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius + size * 0.01, 0, Math.PI * 2);
+  ctx.stroke();
 
-  // Helper: polar → cartesian from centre
-  const polar = (angleDeg: number, radius: number) => {
-    const rad = ((angleDeg - 90) * Math.PI) / 180;
-    return { x: cx + radius * Math.cos(rad), y: cy + radius * Math.sin(rad) };
+  // second sub-ticks: 300
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.22)';
+  ctx.lineWidth = Math.max(0.5, size * 0.0022);
+  for (let i = 0; i < 300; i += 1) {
+    ctx.rotate((Math.PI * 2) / 300);
+    ctx.beginPath();
+    ctx.moveTo(0, -radius + size * 0.02);
+    ctx.lineTo(0, -radius + size * 0.06);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // minute ticks: 60
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+  ctx.lineWidth = Math.max(0.8, size * 0.0045);
+  for (let i = 0; i < 60; i += 1) {
+    ctx.rotate((Math.PI * 2) / 60);
+    ctx.beginPath();
+    ctx.moveTo(0, -radius + size * 0.02);
+    ctx.lineTo(0, -radius + size * 0.09);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // hour ticks + numbers
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.strokeStyle = 'rgba(226, 232, 240, 0.95)';
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.95)';
+  ctx.lineWidth = Math.max(1.2, size * 0.012);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `${Math.max(10, Math.round(size * 0.085))}px ui-sans-serif, system-ui`;
+  for (let i = 1; i <= 12; i += 1) {
+    ctx.rotate((Math.PI * 2) / 12);
+    ctx.beginPath();
+    ctx.moveTo(0, -radius + size * 0.02);
+    ctx.lineTo(0, -radius + size * 0.13);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(0, -radius + size * 0.22);
+    ctx.rotate(-((Math.PI * 2) / 12) * i);
+    ctx.fillText(String(i), 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // 12 o'clock accent
+  ctx.fillStyle = '#f97316';
+  ctx.beginPath();
+  ctx.arc(cx, cy - radius + size * 0.16, Math.max(1.8, size * 0.012), 0, Math.PI * 2);
+  ctx.fill();
+
+  const hourAngle = toAngle(((hour % 12) + minute / 60 + second / 3600) / 12);
+  const minuteAngle = toAngle((minute + second / 60 + ms / 60000) / 60);
+  const secondAngle = toAngle((second + ms / 1000) / 60);
+
+  const drawHand = ({
+    angle,
+    length,
+    tail,
+    width,
+    color,
+    shadowBlur,
+    shadowColor,
+  }: {
+    angle: number;
+    length: number;
+    tail: number;
+    width: number;
+    color: string;
+    shadowBlur: number;
+    shadowColor: string;
+  }) => {
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(angle);
+    ctx.beginPath();
+    ctx.lineCap = 'round';
+    ctx.lineWidth = width;
+    ctx.strokeStyle = color;
+    ctx.shadowBlur = shadowBlur;
+    ctx.shadowColor = shadowColor;
+    ctx.moveTo(0, tail);
+    ctx.lineTo(0, -length);
+    ctx.stroke();
+    ctx.restore();
   };
 
-  // Upright hand path (pointing to 12), rotated via transform="rotate(angle, cx, cy)"
-  // This lets CSS transition: transform work properly.
-  // Shape: diamond-tapered from tail (below centre) to tip (above centre).
-  const handPath = (length: number, width: number, tail: number) =>
-    `M ${cx} ${cy + tail} L ${cx - width / 2} ${cy} L ${cx} ${cy - length} L ${cx + width / 2} ${cy} Z`;
+  drawHand({
+    angle: hourAngle,
+    length: size * 0.24,
+    tail: size * 0.07,
+    width: Math.max(4, size * 0.05),
+    color: '#e2e8f0',
+    shadowBlur: Math.max(2, size * 0.02),
+    shadowColor: 'rgba(15, 23, 42, 0.8)',
+  });
 
-  const id = (name: string) => `${uid}-${name}`;
+  drawHand({
+    angle: minuteAngle,
+    length: size * 0.34,
+    tail: size * 0.08,
+    width: Math.max(3, size * 0.036),
+    color: '#cbd5e1',
+    shadowBlur: Math.max(2, size * 0.02),
+    shadowColor: 'rgba(15, 23, 42, 0.8)',
+  });
+
+  drawHand({
+    angle: secondAngle,
+    length: size * 0.39,
+    tail: size * 0.12,
+    width: Math.max(1.4, size * 0.012),
+    color: '#ef4444',
+    shadowBlur: Math.max(3, size * 0.03),
+    shadowColor: 'rgba(239, 68, 68, 0.5)',
+  });
+
+  // center connector
+  ctx.fillStyle = '#94a3b8';
+  ctx.beginPath();
+  ctx.roundRect(
+    cx - size * 0.025,
+    cy - size * 0.014,
+    size * 0.05,
+    size * 0.028,
+    size * 0.008
+  );
+  ctx.fill();
+
+  // center cap
+  ctx.fillStyle = '#111827';
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(4, size * 0.038), 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#f8fafc';
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(2.5, size * 0.022), 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ef4444';
+  ctx.beginPath();
+  ctx.arc(cx, cy, Math.max(1.6, size * 0.014), 0, Math.PI * 2);
+  ctx.fill();
+}
+
+export default function AnalogClock({ time, size = 40, className = '' }: AnalogClockProps) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) {
+      return;
+    }
+
+    const ratio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+    canvas.width = Math.round(size * ratio);
+    canvas.height = Math.round(size * ratio);
+    canvas.style.width = `${size}px`;
+    canvas.style.height = `${size}px`;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    drawClock(ctx, size, time);
+  }, [size, time]);
 
   return (
     <div
       className={`relative flex items-center justify-center ${className}`}
       style={{ width: size, height: size }}
     >
-      <svg
-        viewBox="0 0 100 100"
-        width={size}
-        height={size}
-        style={{ overflow: 'visible' }}
-      >
-        <defs>
-          {/* Face gradient – dark glass */}
-          <radialGradient id={id('fg')} cx="40%" cy="35%" r="65%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.12)" />
-            <stop offset="100%" stopColor="rgba(15,20,40,0.75)" />
-          </radialGradient>
-
-          {/* Outer bezel gradient */}
-          <linearGradient id={id('bz')} x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.45)" />
-            <stop offset="50%" stopColor="rgba(255,255,255,0.15)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.35)" />
-          </linearGradient>
-
-          {/* Hour-hand gradient */}
-          <linearGradient id={id('hh')} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgba(255,255,255,0.7)" />
-            <stop offset="50%" stopColor="rgba(255,255,255,1)" />
-            <stop offset="100%" stopColor="rgba(255,255,255,0.7)" />
-          </linearGradient>
-
-          {/* Minute-hand gradient */}
-          <linearGradient id={id('mh')} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor="rgba(220,235,255,0.7)" />
-            <stop offset="50%" stopColor="rgba(220,235,255,1)" />
-            <stop offset="100%" stopColor="rgba(220,235,255,0.7)" />
-          </linearGradient>
-
-          {/* Glow filter for second hand */}
-          <filter id={id('sg')} x="-60%" y="-60%" width="220%" height="220%">
-            <feGaussianBlur stdDeviation="1.2" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-
-          {/* Drop shadow for hands */}
-          <filter id={id('hs')} x="-40%" y="-40%" width="180%" height="180%">
-            <feDropShadow dx="0" dy="0" stdDeviation="1" floodColor="rgba(0,0,0,0.5)" />
-          </filter>
-
-          {/* Glow for bezel */}
-          <filter id={id('bg')} x="-5%" y="-5%" width="110%" height="110%">
-            <feGaussianBlur stdDeviation="0.6" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
-
-        {/* ── Outer bezel ring ── */}
-        <circle
-          cx={cx} cy={cy} r={r + 1.5}
-          fill="none"
-          stroke={`url(#${id('bz')})`}
-          strokeWidth="1.5"
-          filter={`url(#${id('bg')})`}
-        />
-
-        {/* ── Clock face ── */}
-        <circle cx={cx} cy={cy} r={r} fill={`url(#${id('fg')})`} />
-
-        {/* Subtle inner shine arc at top */}
-        <path
-          d={`M ${cx - r * 0.55} ${cy - r * 0.72} A ${r * 0.65} ${r * 0.5} 0 0 1 ${cx + r * 0.55} ${cy - r * 0.72}`}
-          fill="none"
-          stroke="rgba(255,255,255,0.18)"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-
-        {/* ── Tick marks (60 minutes) ── */}
-        {[...Array(60)].map((_, i) => {
-          const isHour = i % 5 === 0;
-          const isQuarter = i % 15 === 0;
-          const outer = r - 0.5;
-          const inner = isQuarter ? outer - 7 : isHour ? outer - 5 : outer - 2.5;
-          const strokeW = isQuarter ? 1.8 : isHour ? 1.2 : 0.6;
-          const opacity = isQuarter ? 0.95 : isHour ? 0.75 : 0.4;
-          const p1 = polar(i * 6, outer);
-          const p2 = polar(i * 6, inner);
-          return (
-            <line
-              key={i}
-              x1={p1.x} y1={p1.y}
-              x2={p2.x} y2={p2.y}
-              stroke="rgba(255,255,255,1)"
-              strokeOpacity={opacity}
-              strokeWidth={strokeW}
-              strokeLinecap="round"
-            />
-          );
-        })}
-
-        {/* ── 12 o'clock dot accent ── */}
-        <circle cx={cx} cy={cy - r + 10} r="1.8" fill="rgba(255,255,255,0.9)" />
-
-        {/* ── Hour hand (rotates around centre) ── */}
-        <path
-          d={handPath(28, 3.2, 7)}
-          fill={`url(#${id('hh')})`}
-          filter={`url(#${id('hs')})`}
-          transform={`rotate(${hourAngle}, ${cx}, ${cy})`}
-          style={{ transition: 'transform 0.5s cubic-bezier(0.4,2.2,0.3,0.9)' }}
-        />
-
-        {/* ── Minute hand (rotates around centre) ── */}
-        <path
-          d={handPath(37, 2.2, 8)}
-          fill={`url(#${id('mh')})`}
-          filter={`url(#${id('hs')})`}
-          transform={`rotate(${minuteAngle}, ${cx}, ${cy})`}
-          style={{ transition: 'transform 0.5s cubic-bezier(0.4,2.2,0.3,0.9)' }}
-        />
-
-        {/* ── Second hand (rotates around centre via transform) ── */}
-        <g
-          filter={`url(#${id('sg')})`}
-          transform={`rotate(${secondAngle}, ${cx}, ${cy})`}
-          style={{ transition: 'transform 0.2s linear' }}
-        >
-          {/* counterweight tail */}
-          <line
-            x1={cx} y1={cy}
-            x2={cx} y2={cy + 12}
-            stroke="rgba(251,146,60,0.9)"
-            strokeWidth="1"
-            strokeLinecap="round"
-          />
-          {/* main shaft */}
-          <line
-            x1={cx} y1={cy}
-            x2={cx} y2={cy - 40}
-            stroke="rgba(251,146,60,0.95)"
-            strokeWidth="0.8"
-            strokeLinecap="round"
-          />
-        </g>
-
-        {/* ── Centre cap layers ── */}
-        <circle cx={cx} cy={cy} r="4.5" fill="rgba(0,0,0,0.4)" />
-        <circle cx={cx} cy={cy} r="3.5" fill="rgba(255,255,255,0.95)" />
-        <circle cx={cx} cy={cy} r="1.8" fill="rgba(251,146,60,0.85)" />
-        <circle cx={cx - 0.8} cy={cy - 0.8} r="0.8" fill="rgba(255,255,255,0.9)" />
-      </svg>
+      <canvas ref={canvasRef} width={size} height={size} aria-label="Analog clock" />
     </div>
   );
 }
