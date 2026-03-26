@@ -3,8 +3,12 @@ const FALLBACK_HOST = 'https://60s.viki.moe';
 const HOSTS = [PRIMARY_HOST, FALLBACK_HOST];
 
 const NEWS_CACHE_KEY = 'homepage:news:cache:v2';
+const NEWS_CACHE_META_KEY = 'homepage:news:cache:v2:meta';
+const NEWS_CACHE_CHUNK_PREFIX = 'homepage:news:cache:v2:chunk:';
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_FETCH_LIMIT = 30;
+const CACHE_CHUNK_MAX_BYTES = 20 * 1024 * 1024;
+const SOURCE_FETCH_TIMEOUT_MS = 12 * 1000;
 
 const NEWS_SOURCES = {
   s60: { id: 's60', label: '60s 读懂世界', endpoint: '/v2/60s' },
@@ -314,16 +318,125 @@ function normalizeCacheBundle(payload) {
   };
 }
 
+function getCacheChunkKey(index) {
+  return `${NEWS_CACHE_CHUNK_PREFIX}${index}`;
+}
+
+async function readChunkedCacheBundle(kv) {
+  try {
+    const metaRaw = await kv.get(NEWS_CACHE_META_KEY);
+    if (!metaRaw) {
+      return null;
+    }
+
+    const meta = JSON.parse(metaRaw);
+    if (!meta || meta.format !== 'chunked-v1') {
+      return null;
+    }
+
+    const chunkCount = Number(meta.chunkCount);
+    if (!Number.isInteger(chunkCount) || chunkCount <= 0) {
+      return null;
+    }
+
+    const chunkValues = await Promise.all(
+      Array.from({ length: chunkCount }, (_, index) => kv.get(getCacheChunkKey(index)))
+    );
+
+    if (chunkValues.some((item) => typeof item !== 'string' || !item.length)) {
+      return null;
+    }
+
+    const merged = chunkValues.join('');
+    return normalizeCacheBundle(JSON.parse(merged));
+  } catch {
+    return null;
+  }
+}
+
+async function writeChunkedCacheBundle(kv, bundle) {
+  const serialized = JSON.stringify(bundle);
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const bytes = encoder.encode(serialized);
+
+  const nextChunkCount = Math.max(1, Math.ceil(bytes.length / CACHE_CHUNK_MAX_BYTES));
+
+  let previousChunkCount = 0;
+  try {
+    const previousMetaRaw = await kv.get(NEWS_CACHE_META_KEY);
+    if (previousMetaRaw) {
+      const previousMeta = JSON.parse(previousMetaRaw);
+      const parsedCount = Number(previousMeta?.chunkCount);
+      if (Number.isInteger(parsedCount) && parsedCount > 0) {
+        previousChunkCount = parsedCount;
+      }
+    }
+  } catch {
+    previousChunkCount = 0;
+  }
+
+  await Promise.all(
+    Array.from({ length: nextChunkCount }, async (_, index) => {
+      const start = index * CACHE_CHUNK_MAX_BYTES;
+      const end = Math.min(start + CACHE_CHUNK_MAX_BYTES, bytes.length);
+      const chunk = decoder.decode(bytes.slice(start, end));
+      await kv.put(getCacheChunkKey(index), chunk);
+    })
+  );
+
+  await kv.put(
+    NEWS_CACHE_META_KEY,
+    JSON.stringify({
+      format: 'chunked-v1',
+      chunkCount: nextChunkCount,
+      sizeBytes: bytes.length,
+      updatedAt: bundle.updatedAt,
+      expiresAt: bundle.expiresAt,
+    })
+  );
+
+  if (previousChunkCount > nextChunkCount) {
+    await Promise.all(
+      Array.from({ length: previousChunkCount - nextChunkCount }, (_, offset) => {
+        const staleChunkIndex = nextChunkCount + offset;
+        return kv.delete(getCacheChunkKey(staleChunkIndex));
+      })
+    );
+  }
+
+  try {
+    await kv.delete(NEWS_CACHE_KEY);
+  } catch {
+    // Ignore legacy key cleanup failures.
+  }
+}
+
 async function fetchFromSourceHost(source, host, limit) {
   const requestUrl = new URL(source.endpoint, host);
   requestUrl.searchParams.set('encoding', 'json');
   requestUrl.searchParams.set('limit', String(limit));
 
-  const response = await fetch(requestUrl.toString(), {
-    headers: {
-      accept: 'application/json',
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), SOURCE_FETCH_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch(requestUrl.toString(), {
+      signal: controller.signal,
+      headers: {
+        accept: 'application/json',
+      },
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error(`请求超时(${SOURCE_FETCH_TIMEOUT_MS}ms)`);
+    }
+
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}`);
@@ -343,32 +456,43 @@ async function fetchFromSourceHost(source, host, limit) {
 
 async function fetchSourceFromHosts(sourceId, limit) {
   const source = NEWS_SOURCES[sourceId];
-  const errors = [];
-
-  for (const host of HOSTS) {
+  const attempts = HOSTS.map(async (host) => {
     try {
       const items = await fetchFromSourceHost(source, host, limit);
       return {
-        ok: true,
-        source,
-        sourceId,
         host,
         items,
-        errors,
       };
     } catch (error) {
-      errors.push(`${host}: ${error instanceof Error ? error.message : '未知错误'}`);
+      throw new Error(`${host}: ${error instanceof Error ? error.message : '未知错误'}`);
     }
-  }
+  });
 
-  return {
-    ok: false,
-    source,
-    sourceId,
-    host: '',
-    items: [],
-    errors,
-  };
+  try {
+    const winner = await Promise.any(attempts);
+    return {
+      ok: true,
+      source,
+      sourceId,
+      host: winner.host,
+      items: winner.items,
+      errors: [],
+    };
+  } catch (error) {
+    const errors =
+      error && typeof error === 'object' && Array.isArray(error.errors)
+        ? error.errors.map((item) => (item instanceof Error ? item.message : String(item)))
+        : ['未知错误'];
+
+    return {
+      ok: false,
+      source,
+      sourceId,
+      host: '',
+      items: [],
+      errors,
+    };
+  }
 }
 
 async function fetchAllSources(limit = CACHE_FETCH_LIMIT) {
@@ -421,6 +545,11 @@ async function readNewsCache(kv) {
     return null;
   }
 
+  const chunked = await readChunkedCacheBundle(kv);
+  if (chunked) {
+    return chunked;
+  }
+
   try {
     const raw = await kv.get(NEWS_CACHE_KEY);
     if (!raw) {
@@ -451,10 +580,45 @@ async function refreshNewsCache(kv) {
   const fresh = await fetchAllSources(CACHE_FETCH_LIMIT);
 
   if (kv) {
-    await kv.put(NEWS_CACHE_KEY, JSON.stringify(fresh));
+    await writeChunkedCacheBundle(kv, fresh);
   }
 
   return fresh;
+}
+
+async function refreshSingleSourceCache(kv, sourceId) {
+  if (!kv || !NEWS_SOURCES[sourceId]) {
+    return false;
+  }
+
+  const currentBundle = await readNewsCache(kv);
+  if (!currentBundle) {
+    return false;
+  }
+
+  const fetched = await fetchSourceFromHosts(sourceId, CACHE_FETCH_LIMIT);
+  if (!fetched.ok) {
+    return false;
+  }
+
+  const now = Date.now();
+  const nextBundle = {
+    ...currentBundle,
+    updatedAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + CACHE_TTL_MS).toISOString(),
+    sources: {
+      ...currentBundle.sources,
+      [sourceId]: {
+        sourceId: fetched.source.id,
+        sourceLabel: fetched.source.label,
+        host: fetched.host,
+        items: fetched.items,
+      },
+    },
+  };
+
+  await writeChunkedCacheBundle(kv, nextBundle);
+  return true;
 }
 
 function selectActiveSource(bundle, mode, sourceId) {
@@ -620,6 +784,15 @@ export async function onRequestGet(context) {
     }
 
     if (!cacheExpired) {
+      const shouldBackgroundRepairSource =
+        mode === 'manual' &&
+        sourceId !== 'auto' &&
+        (!cacheBundle.sources[sourceId] || cacheBundle.sources[sourceId].items.length === 0);
+
+      if (shouldBackgroundRepairSource) {
+        scheduleBackgroundRefresh(context, refreshSingleSourceCache(kv, sourceId));
+      }
+
       return jsonResponse(
         buildResponsePayload({
           mode,

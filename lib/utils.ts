@@ -14,7 +14,7 @@ function getFunctionsHost() {
   return process.env.NODE_ENV === 'development' ? 'http://localhost:8088' : '';
 }
 
-const REQUEST_TIMEOUT_MS = 8000;
+const REQUEST_TIMEOUT_MS = 12000;
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const host = getFunctionsHost();
