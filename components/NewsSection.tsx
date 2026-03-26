@@ -50,6 +50,7 @@ const DEV_FUNCTIONS_HOST =
   process.env.NEXT_PUBLIC_FUNCTIONS_HOST?.trim() || 'http://localhost:8088';
 const FUNCTIONS_HOST = process.env.NODE_ENV === 'development' ? DEV_FUNCTIONS_HOST : '';
 const WEB_CACHE_TTL_MS = 30 * 60 * 1000;
+const FETCH_TIMEOUT_MS = 30 * 1000;
 
 type NewsApiResponse = {
   mode: NewsSourceMode;
@@ -191,17 +192,30 @@ async function fetchNewsFeed({
     params.set('refresh', '1');
   }
 
-  const response = await fetch(`${FUNCTIONS_HOST}/news?${params.toString()}`, {
-    cache: 'no-store',
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error('获取热点新闻失败');
+  try {
+    const response = await fetch(`${FUNCTIONS_HOST}/news?${params.toString()}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      throw new Error('获取热点新闻失败');
+    }
+
+    const payload = (await response.json()) as NewsApiResponse;
+    setWebCache(limit, payload);
+    return payload;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('请求超时，请稍后重试');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const payload = (await response.json()) as NewsApiResponse;
-  setWebCache(limit, payload);
-  return payload;
 }
 
 type NewsSectionProps = {
@@ -311,7 +325,7 @@ export default function NewsSection({
     }
 
     if (payload.cache.isStale) {
-      warnings.unshift('当前为缓存内容，后台正在刷新，稍后会自动同步新内容');
+      warnings.unshift('当前为缓存内容，后台正在分批刷新，预计1-2分钟完成');
     }
 
     setWarning(warnings[0] || null);
@@ -353,33 +367,7 @@ export default function NewsSection({
         bundleRef.current = result;
         setBundle(result);
         applyBundleToView(result);
-
-        if (result.cache.isStale && !isManualRefresh) {
-          setIsSyncing(true);
-          try {
-            const synced = await fetchNewsFeed({
-              sourceMode: sourceModeRef.current,
-              sourceId: sourceIdRef.current,
-              limit,
-              refresh: true,
-              allowWebCache: false,
-            });
-
-            if (!cancelled) {
-              bundleRef.current = synced;
-              setBundle(synced);
-              applyBundleToView(synced);
-            }
-          } catch {
-            // Keep stale content when sync fails; warning already shown.
-          } finally {
-            if (!cancelled) {
-              setIsSyncing(false);
-            }
-          }
-        } else {
-          setIsSyncing(false);
-        }
+        setIsSyncing(false);
       } catch (err) {
         if (!cancelled) {
           setError(err instanceof Error ? err.message : '加载失败');

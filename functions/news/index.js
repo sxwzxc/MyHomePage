@@ -9,9 +9,8 @@ const NEWS_REFRESH_CURSOR_KEY = 'homepage:news:refresh:cursor:v1';
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_FETCH_LIMIT = 30;
 const CACHE_CHUNK_MAX_BYTES = 20 * 1024 * 1024;
-const SOURCE_FETCH_TIMEOUT_MS = 300 * 1000;
-const BACKGROUND_REFRESH_BATCH_SIZE = 2;
-const BACKGROUND_REFRESH_INTERVAL_MS = 2000;
+const SOURCE_FETCH_TIMEOUT_MS = 15 * 1000;
+const BACKGROUND_REFRESH_BATCH_SIZE = 3;
 const EO_TIMEOUT_SETTING = {
   connectTimeout: 300000,
   readTimeout: 300000,
@@ -339,16 +338,6 @@ function getCacheChunkKey(index) {
   return `${NEWS_CACHE_CHUNK_PREFIX}${index}`;
 }
 
-function sleep(ms) {
-  if (!Number.isFinite(ms) || ms <= 0) {
-    return Promise.resolve();
-  }
-
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
-
 async function readChunkedCacheBundle(kv) {
   try {
     const metaRaw = await kv.get(NEWS_CACHE_META_KEY);
@@ -665,7 +654,6 @@ async function refreshNewsCacheBatch(kv, options = {}) {
       Math.round(options.batchSize || BACKGROUND_REFRESH_BATCH_SIZE)
     )
   );
-  const intervalMs = Math.max(0, Math.round(options.intervalMs || BACKGROUND_REFRESH_INTERVAL_MS));
 
   const baseBundle = (await readNewsCache(kv)) || {
     version: 1,
@@ -682,9 +670,15 @@ async function refreshNewsCacheBatch(kv, options = {}) {
     ...baseBundle.sources,
   };
 
-  for (let index = 0; index < targetSourceIds.length; index += 1) {
+  // Fetch all sources in the batch concurrently
+  const fetchResults = await Promise.all(
+    targetSourceIds.map((sourceId) => fetchSourceFromHosts(sourceId, CACHE_FETCH_LIMIT))
+  );
+
+  // Process results
+  for (let index = 0; index < fetchResults.length; index += 1) {
+    const fetched = fetchResults[index];
     const sourceId = targetSourceIds[index];
-    const fetched = await fetchSourceFromHosts(sourceId, CACHE_FETCH_LIMIT);
 
     nextSources[sourceId] = {
       sourceId: fetched.source.id,
@@ -699,10 +693,6 @@ async function refreshNewsCacheBatch(kv, options = {}) {
       );
     } else if (fetched.items.length === 0) {
       warnings.push(`来源 ${fetched.source.label} 暂无可展示内容`);
-    }
-
-    if (index < targetSourceIds.length - 1 && intervalMs > 0) {
-      await sleep(intervalMs);
     }
   }
 
@@ -895,7 +885,7 @@ export async function onRequestGet(context) {
             sourceId,
             limit,
             bundle: cacheBundle,
-            warnings: ['已触发强制刷新，后台同步中，稍后将自动更新'],
+            warnings: ['已触发刷新，后台正在更新数据，请稍后重新打开页面查看'],
             cacheFrom: 'kv',
             isStale: true,
           })
@@ -1015,7 +1005,7 @@ export async function onRequestGet(context) {
         sourceId,
         limit,
         bundle: cacheBundle,
-        warnings: ['缓存已过期，后台正在刷新，几秒后将自动同步新内容'],
+        warnings: ['缓存已过期，后台正在刷新，预计1-2分钟后完成，请稍后重新打开页面'],
         cacheFrom: 'kv',
         isStale: true,
       })
