@@ -473,49 +473,39 @@ async function fetchFromSourceHost(source, host, limit) {
 
 async function fetchSourceFromHosts(sourceId, limit) {
   const source = NEWS_SOURCES[sourceId];
-  const attempts = HOSTS.map(async (host) => {
+  const errors = [];
+
+  for (const host of HOSTS) {
     try {
       const items = await fetchFromSourceHost(source, host, limit);
       return {
+        ok: true,
+        source,
+        sourceId,
         host,
         items,
+        errors: [],
       };
     } catch (error) {
-      throw new Error(`${host}: ${error instanceof Error ? error.message : '未知错误'}`);
+      errors.push(`${host}: ${error instanceof Error ? error.message : '未知错误'}`);
     }
-  });
-
-  try {
-    const winner = await Promise.any(attempts);
-    return {
-      ok: true,
-      source,
-      sourceId,
-      host: winner.host,
-      items: winner.items,
-      errors: [],
-    };
-  } catch (error) {
-    const errors =
-      error && typeof error === 'object' && Array.isArray(error.errors)
-        ? error.errors.map((item) => (item instanceof Error ? item.message : String(item)))
-        : ['未知错误'];
-
-    return {
-      ok: false,
-      source,
-      sourceId,
-      host: '',
-      items: [],
-      errors,
-    };
   }
+
+  return {
+    ok: false,
+    source,
+    sourceId,
+    host: '',
+    items: [],
+    errors: errors.length > 0 ? errors : ['未知错误'],
+  };
 }
 
 async function fetchAllSources(limit = CACHE_FETCH_LIMIT) {
-  const settled = await Promise.all(
-    AUTO_SOURCE_ORDER.map((sourceId) => fetchSourceFromHosts(sourceId, limit))
-  );
+  const settled = [];
+  for (const sourceId of AUTO_SOURCE_ORDER) {
+    settled.push(await fetchSourceFromHosts(sourceId, limit));
+  }
 
   const sources = {};
   const warnings = [];
