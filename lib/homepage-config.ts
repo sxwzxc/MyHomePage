@@ -47,6 +47,7 @@ export type NewsConfig = {
   sourceMode: NewsSourceMode;
   sourceId: NewsSourceId;
   enabledSourceIds: NewsSourceId[];
+  sourceOrder: NewsSourceId[];
   autoSwitchSeconds: number;
   limit: number;
 };
@@ -136,6 +137,7 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
     sourceMode: 'auto',
     sourceId: 's60',
     enabledSourceIds: NEWS_SOURCE_OPTIONS.map((item) => item.id),
+    sourceOrder: NEWS_SOURCE_OPTIONS.map((item) => item.id),
     autoSwitchSeconds: 15,
     limit: 10,
   },
@@ -252,6 +254,19 @@ function normalizeNewsConfig(value: unknown): NewsConfig {
 
   const sourceMode = value.sourceMode === 'manual' ? 'manual' : 'auto';
   const allSourceIds = NEWS_SOURCE_OPTIONS.map((item) => item.id);
+
+  const sourceOrderFromValue = Array.isArray(value.sourceOrder)
+    ? value.sourceOrder.filter(
+        (item): item is NewsSourceId =>
+          NEWS_SOURCE_OPTIONS.some((option) => option.id === item)
+      )
+    : [];
+  const sourceOrderSet = new Set(sourceOrderFromValue);
+  const normalizedSourceOrder = [
+    ...sourceOrderFromValue,
+    ...allSourceIds.filter((id) => !sourceOrderSet.has(id)),
+  ];
+
   const enabledSourceIdsFromValue = Array.isArray(value.enabledSourceIds)
     ? value.enabledSourceIds
         .filter((item): item is NewsSourceId =>
@@ -285,6 +300,7 @@ function normalizeNewsConfig(value: unknown): NewsConfig {
     sourceMode,
     sourceId,
     enabledSourceIds: normalizedEnabledSourceIds,
+    sourceOrder: normalizedSourceOrder,
     autoSwitchSeconds,
     limit,
   };

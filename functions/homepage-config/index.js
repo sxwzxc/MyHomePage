@@ -75,6 +75,7 @@ const DEFAULT_CONFIG = {
     sourceMode: 'auto',
     sourceId: 's60',
     enabledSourceIds: Array.from(NEWS_SOURCE_IDS),
+    sourceOrder: Array.from(NEWS_SOURCE_IDS),
     autoSwitchSeconds: 15,
     limit: 10,
   },
@@ -226,11 +227,22 @@ function normalizeNewsConfig(value) {
   }
 
   const sourceMode = value.sourceMode === 'manual' ? 'manual' : 'auto';
+  const allSourceIds = Array.from(NEWS_SOURCE_IDS);
+
+  const sourceOrder = Array.isArray(value.sourceOrder)
+    ? value.sourceOrder.filter((item) => NEWS_SOURCE_IDS.has(item))
+    : [];
+  const sourceOrderSet = new Set(sourceOrder);
+  const normalizedSourceOrder = [
+    ...sourceOrder,
+    ...allSourceIds.filter((id) => !sourceOrderSet.has(id)),
+  ];
+
   const enabledSourceIds = Array.isArray(value.enabledSourceIds)
     ? Array.from(new Set(value.enabledSourceIds.filter((item) => NEWS_SOURCE_IDS.has(item))))
     : [];
   const normalizedEnabledSourceIds =
-    enabledSourceIds.length > 0 ? enabledSourceIds : Array.from(NEWS_SOURCE_IDS);
+    enabledSourceIds.length > 0 ? enabledSourceIds : allSourceIds;
 
   const preferredSourceId = NEWS_SOURCE_IDS.has(value.sourceId)
     ? value.sourceId
@@ -255,6 +267,7 @@ function normalizeNewsConfig(value) {
     sourceMode,
     sourceId,
     enabledSourceIds: normalizedEnabledSourceIds,
+    sourceOrder: normalizedSourceOrder,
     autoSwitchSeconds,
     limit,
   };

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2, Newspaper } from 'lucide-react';
+import { ArrowDown, ArrowUp, CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2, Newspaper } from 'lucide-react';
 import {
   Bookmark,
   HomepageConfig,
@@ -130,12 +130,27 @@ export default function SettingsDashboard() {
     () => config.bookmarks.length - refreshableBookmarks.length,
     [config.bookmarks.length, refreshableBookmarks.length]
   );
+  const orderedNewsSourceOptions = useMemo(() => {
+    const byId = new Map(NEWS_SOURCE_OPTIONS.map((item) => [item.id, item]));
+    const ordered = config.news.sourceOrder
+      .map((id) => byId.get(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    for (const option of NEWS_SOURCE_OPTIONS) {
+      if (!ordered.some((item) => item.id === option.id)) {
+        ordered.push(option);
+      }
+    }
+
+    return ordered;
+  }, [config.news.sourceOrder]);
+
   const enabledNewsSourceOptions = useMemo(
     () =>
-      NEWS_SOURCE_OPTIONS.filter((item) =>
+      orderedNewsSourceOptions.filter((item) =>
         config.news.enabledSourceIds.includes(item.id)
       ),
-    [config.news.enabledSourceIds]
+    [orderedNewsSourceOptions, config.news.enabledSourceIds]
   );
 
   useEffect(() => {
@@ -959,7 +974,7 @@ export default function SettingsDashboard() {
             <div className="mt-3">
               <label className="mb-2 block text-xs text-slate-300">显示来源（默认全选）</label>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {NEWS_SOURCE_OPTIONS.map((source) => {
+                {orderedNewsSourceOptions.map((source) => {
                   const checked = config.news.enabledSourceIds.includes(source.id);
 
                   return (
@@ -1008,6 +1023,88 @@ export default function SettingsDashboard() {
                     </label>
                   );
                 })}
+              </div>
+            </div>
+
+            <div className="mt-3">
+              <label className="mb-2 block text-xs text-slate-300">
+                来源排序（自动模式与展示顺序）
+              </label>
+              <div className="space-y-2">
+                {orderedNewsSourceOptions.map((source, index) => (
+                  <div
+                    key={`sort-${source.id}`}
+                    className="flex items-center justify-between rounded-lg border border-white/15 bg-slate-900/60 px-3 py-2 text-xs text-slate-200"
+                  >
+                    <span>{source.label}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() => {
+                          updateConfig((prev) => {
+                            const currentOrder = [...prev.news.sourceOrder];
+                            const currentIndex = currentOrder.indexOf(source.id);
+                            if (currentIndex <= 0) {
+                              return prev;
+                            }
+
+                            [currentOrder[currentIndex - 1], currentOrder[currentIndex]] = [
+                              currentOrder[currentIndex],
+                              currentOrder[currentIndex - 1],
+                            ];
+
+                            return {
+                              ...prev,
+                              news: {
+                                ...prev.news,
+                                sourceOrder: currentOrder,
+                              },
+                            };
+                          });
+                        }}
+                        className="rounded-md border border-white/20 bg-white/10 p-1 text-white/90 transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`上移 ${source.label}`}
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={index === orderedNewsSourceOptions.length - 1}
+                        onClick={() => {
+                          updateConfig((prev) => {
+                            const currentOrder = [...prev.news.sourceOrder];
+                            const currentIndex = currentOrder.indexOf(source.id);
+                            if (
+                              currentIndex < 0 ||
+                              currentIndex >= currentOrder.length - 1
+                            ) {
+                              return prev;
+                            }
+
+                            [currentOrder[currentIndex], currentOrder[currentIndex + 1]] = [
+                              currentOrder[currentIndex + 1],
+                              currentOrder[currentIndex],
+                            ];
+
+                            return {
+                              ...prev,
+                              news: {
+                                ...prev.news,
+                                sourceOrder: currentOrder,
+                              },
+                            };
+                          });
+                        }}
+                        className="rounded-md border border-white/20 bg-white/10 p-1 text-white/90 transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label={`下移 ${source.label}`}
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
 

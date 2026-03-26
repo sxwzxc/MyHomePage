@@ -1165,6 +1165,7 @@ export default function HomepageDashboard() {
           sourceMode={config.news.sourceMode}
           sourceId={config.news.sourceId}
           enabledSourceIds={config.news.enabledSourceIds}
+          sourceOrder={config.news.sourceOrder}
           autoSwitchSeconds={config.news.autoSwitchSeconds}
           limit={config.news.limit}
           onConfigChange={handleNewsConfigChange}

@@ -96,11 +96,16 @@ function pickSourceFromBundle(
   sourceMode: NewsSourceMode,
   sourceId: NewsSourceId,
   enabledSourceIds: NewsSourceId[],
+  sourceOrder: NewsSourceId[],
   autoSourceCursor: number
 ): NewsSourcePayload {
   const byId = new Map(payload.sources.map((source) => [source.sourceId, source]));
   const fallbackSourceIds = NEWS_SOURCE_OPTIONS.map((item) => item.id);
-  const normalizedEnabledIds = enabledSourceIds.length > 0 ? enabledSourceIds : fallbackSourceIds;
+  const normalizedOrderIds = sourceOrder.length > 0 ? sourceOrder : fallbackSourceIds;
+  const normalizedEnabledIds =
+    enabledSourceIds.length > 0
+      ? normalizedOrderIds.filter((id) => enabledSourceIds.includes(id))
+      : normalizedOrderIds;
 
   if (sourceMode === 'manual') {
     return (
@@ -128,6 +133,13 @@ function pickSourceFromBundle(
     }
 
     if (candidate) {
+      return candidate;
+    }
+  }
+
+  for (const optionId of normalizedOrderIds) {
+    const candidate = byId.get(optionId);
+    if (candidate && candidate.items.length > 0) {
       return candidate;
     }
   }
@@ -199,6 +211,7 @@ type NewsSectionProps = {
   sourceMode: NewsSourceMode;
   sourceId: NewsSourceId;
   enabledSourceIds: NewsSourceId[];
+  sourceOrder: NewsSourceId[];
   autoSwitchSeconds: number;
   limit: number;
   onConfigChange: (patch: Partial<NewsConfig>) => void;
@@ -210,6 +223,7 @@ export default function NewsSection({
   sourceMode,
   sourceId,
   enabledSourceIds,
+  sourceOrder,
   autoSwitchSeconds,
   limit,
   onConfigChange,
@@ -233,13 +247,29 @@ export default function NewsSection({
   const sourceModeRef = useRef(sourceMode);
   const sourceIdRef = useRef(sourceId);
   const enabledSourceIdsRef = useRef(enabledSourceIds);
+  const sourceOrderRef = useRef(sourceOrder);
   const autoSourceCursorRef = useRef(autoSourceCursor);
   const bundleRef = useRef<NewsApiResponse | null>(null);
 
+  const normalizedSourceOrder = useMemo(() => {
+    const byId = new Map(NEWS_SOURCE_OPTIONS.map((item) => [item.id, item]));
+    const ordered = sourceOrder
+      .map((id) => byId.get(id))
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    for (const option of NEWS_SOURCE_OPTIONS) {
+      if (!ordered.some((item) => item.id === option.id)) {
+        ordered.push(option);
+      }
+    }
+
+    return ordered;
+  }, [sourceOrder]);
+
   const visibleSourceOptions = useMemo(
     () =>
-      NEWS_SOURCE_OPTIONS.filter((item) => enabledSourceIds.includes(item.id)),
-    [enabledSourceIds]
+      normalizedSourceOrder.filter((item) => enabledSourceIds.includes(item.id)),
+    [normalizedSourceOrder, enabledSourceIds]
   );
   const enabledSourceKey = useMemo(() => enabledSourceIds.join('|'), [enabledSourceIds]);
 
@@ -251,7 +281,8 @@ export default function NewsSection({
     sourceModeRef.current = sourceMode;
     sourceIdRef.current = sourceId;
     enabledSourceIdsRef.current = enabledSourceIds;
-  }, [sourceMode, sourceId, enabledSourceIds]);
+    sourceOrderRef.current = sourceOrder;
+  }, [sourceMode, sourceId, enabledSourceIds, sourceOrder]);
 
   useEffect(() => {
     autoSourceCursorRef.current = autoSourceCursor;
@@ -267,6 +298,7 @@ export default function NewsSection({
       sourceModeRef.current,
       sourceIdRef.current,
       enabledSourceIdsRef.current,
+      sourceOrderRef.current,
       autoSourceCursorRef.current
     );
 
@@ -375,7 +407,7 @@ export default function NewsSection({
 
     bundleRef.current = bundle;
     applyBundleToView(bundle);
-  }, [bundle, enabled, sourceMode, sourceId, enabledSourceIds, autoSourceCursor]);
+  }, [bundle, enabled, sourceMode, sourceId, enabledSourceIds, sourceOrder, autoSourceCursor]);
 
   useEffect(() => {
     setAutoSourceCursor(0);
