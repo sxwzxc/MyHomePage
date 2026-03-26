@@ -147,6 +147,12 @@ function BookmarkAvatar({ bookmark }: { bookmark: Bookmark }) {
   );
 }
 
+function getSecondAlignedNow(): Date {
+  const current = new Date();
+  current.setMilliseconds(0);
+  return current;
+}
+
 export default function HomepageDashboard() {
   const router = useRouter();
   const [config, setConfig] = useState<HomepageConfig>(DEFAULT_HOMEPAGE_CONFIG);
@@ -158,7 +164,7 @@ export default function HomepageDashboard() {
   const [visitCount, setVisitCount] = useState<number | null>(null);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [weatherError, setWeatherError] = useState<string | null>(null);
-  const [now, setNow] = useState(() => new Date());
+  const [now, setNow] = useState(() => getSecondAlignedNow());
   const [contextMenu, setContextMenu] = useState<{
     bookmark: Bookmark;
     x: number;
@@ -228,12 +234,23 @@ export default function HomepageDashboard() {
     desiredColumns >= 5 ? 'text-[11px]' : 'text-xs';
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 1000);
+    let intervalId: number | null = null;
+
+    const startAlignedTicker = () => {
+      setNow(getSecondAlignedNow());
+      intervalId = window.setInterval(() => {
+        setNow(getSecondAlignedNow());
+      }, 1000);
+    };
+
+    const delayToNextSecond = 1000 - (Date.now() % 1000);
+    const timeoutId = window.setTimeout(startAlignedTicker, delayToNextSecond);
 
     return () => {
-      window.clearInterval(timer);
+      window.clearTimeout(timeoutId);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
     };
   }, []);
 
@@ -908,7 +925,7 @@ export default function HomepageDashboard() {
               </div>
 
               <div className="flex items-center justify-center rounded-2xl border border-white/15 bg-slate-950/55 px-2 py-2">
-                <AnalogClock time={now} size={88} className="shrink-0" />
+                <AnalogClock time={now} size={108} className="shrink-0" />
               </div>
             </div>
           </div>
