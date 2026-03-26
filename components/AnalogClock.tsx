@@ -9,7 +9,7 @@ interface AnalogClockProps {
 }
 
 function toAngle(ratio: number): number {
-  return ratio * Math.PI * 2 - Math.PI / 2;
+  return ratio * Math.PI * 2;
 }
 
 function drawClock(ctx: CanvasRenderingContext2D, size: number, time: Date) {
