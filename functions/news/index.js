@@ -754,9 +754,26 @@ export async function onRequestGet(context) {
     const hasCache = Boolean(cacheBundle);
     const cacheExpired = isCacheExpired(cacheBundle);
 
-    if (forceRefresh || !hasCache) {
+    if (forceRefresh) {
+      const refreshPromise = refreshNewsCache(kv);
+      const backgroundScheduled = scheduleBackgroundRefresh(context, refreshPromise);
+
+      if (hasCache && backgroundScheduled) {
+        return jsonResponse(
+          buildResponsePayload({
+            mode,
+            sourceId,
+            limit,
+            bundle: cacheBundle,
+            warnings: ['已触发强制刷新，后台同步中，稍后将自动更新'],
+            cacheFrom: 'kv',
+            isStale: true,
+          })
+        );
+      }
+
       try {
-        const fresh = await refreshNewsCache(kv);
+        const fresh = await refreshPromise;
         return jsonResponse(
           buildResponsePayload({
             mode,
@@ -788,6 +805,21 @@ export async function onRequestGet(context) {
 
         throw error;
       }
+    }
+
+    if (!hasCache) {
+      const fresh = await refreshNewsCache(kv);
+      return jsonResponse(
+        buildResponsePayload({
+          mode,
+          sourceId,
+          limit,
+          bundle: fresh,
+          warnings: fresh.warnings,
+          cacheFrom: 'origin',
+          isStale: false,
+        })
+      );
     }
 
     if (!cacheExpired) {
