@@ -177,23 +177,75 @@ function normalizePublishedAt(item) {
   return '';
 }
 
-function normalizeNewsItems(source, rawItems, limit) {
+function extractRawItems(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return [];
+  }
+
+  if (Array.isArray(payload.data)) {
+    return payload.data;
+  }
+
+  const data = payload.data && typeof payload.data === 'object' ? payload.data : null;
+  if (!data) {
+    return [];
+  }
+
+  const candidates = ['news', 'list', 'items', 'hot', 'data'];
+  for (const key of candidates) {
+    if (Array.isArray(data[key])) {
+      return data[key];
+    }
+  }
+
+  return [];
+}
+
+function normalizeNewsItems(source, rawItems, limit, defaults = {}) {
   const normalized = (Array.isArray(rawItems) ? rawItems : [])
     .map((item) => {
+      if (typeof item === 'string') {
+        const title = item.trim();
+        if (!title) {
+          return null;
+        }
+
+        return {
+          title,
+          link: asString(defaults.link).trim(),
+          summary: asString(defaults.tip).trim(),
+          cover: asString(defaults.cover).trim() || asString(defaults.image).trim(),
+          hot: '',
+          publishedAt: asString(defaults.created).trim() || normalizePublishedAt(defaults),
+          sourceId: source.id,
+          sourceLabel: source.label,
+        };
+      }
+
       if (!item || typeof item !== 'object') {
         return null;
       }
 
-      const title = asString(item.title).trim();
+      const title =
+        asString(item.title).trim() ||
+        asString(item.name).trim() ||
+        asString(item.topic).trim() ||
+        asString(item.word).trim() ||
+        asString(item.text).trim();
       const link = asString(item.link).trim() || asString(item.url).trim();
       const summary =
         asString(item.description).trim() ||
         asString(item.detail).trim() ||
         asString(item.desc).trim() ||
-        asString(item.summary).trim();
-      const cover = asString(item.cover).trim();
+        asString(item.summary).trim() ||
+        asString(item.content).trim();
+      const cover =
+        asString(item.cover).trim() ||
+        asString(item.image).trim() ||
+        asString(defaults.cover).trim() ||
+        asString(defaults.image).trim();
       const hot = normalizeHotValue(item);
-      const publishedAt = normalizePublishedAt(item);
+      const publishedAt = normalizePublishedAt(item) || normalizePublishedAt(defaults);
 
       if (!title) {
         return null;
@@ -282,13 +334,11 @@ async function fetchFromSourceHost(source, host, limit) {
     throw new Error('上游返回格式异常');
   }
 
-  const rawItems = Array.isArray(payload.data)
-    ? payload.data
-    : payload.data && Array.isArray(payload.data.news)
-      ? payload.data.news
-      : [];
+  const dataDefaults =
+    payload.data && typeof payload.data === 'object' ? payload.data : {};
+  const rawItems = extractRawItems(payload);
 
-  return normalizeNewsItems(source, rawItems, limit);
+  return normalizeNewsItems(source, rawItems, limit, dataDefaults);
 }
 
 async function fetchSourceFromHosts(sourceId, limit) {
@@ -338,7 +388,8 @@ async function fetchAllSources(limit = CACHE_FETCH_LIMIT) {
     };
 
     if (!item.ok) {
-      warnings.push(`来源 ${item.source.label} 请求失败`);
+      const reason = item.errors[0] || '未知错误';
+      warnings.push(`来源 ${item.source.label} 请求失败：${reason}`);
       continue;
     }
 

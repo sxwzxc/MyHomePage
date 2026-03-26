@@ -223,7 +223,6 @@ export default function NewsSection({
     defaultCollapsed ? '' : 'news-content'
   );
   const [activeSourceLabel, setActiveSourceLabel] = useState<string>('自动');
-  const [activeHost, setActiveHost] = useState<string>('');
   const [refreshNonce, setRefreshNonce] = useState(0);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const [cachedUntil, setCachedUntil] = useState<Date | null>(null);
@@ -273,7 +272,6 @@ export default function NewsSection({
 
     setNews(active.items);
     setActiveSourceLabel(active.sourceLabel);
-    setActiveHost(active.host);
 
     const warnings = [...(payload.warnings || [])];
 
@@ -425,8 +423,6 @@ export default function NewsSection({
       ? `自动（当前：${activeSourceLabel}）`
       : visibleSourceOptions.find((item) => item.id === sourceId)?.label || activeSourceLabel;
 
-  const hostDisplayName = activeHost.replace(/^https?:\/\//, '') || '未返回';
-
   return (
     <article className="relative overflow-hidden rounded-2xl border border-white/15 bg-slate-900/60 p-5 shadow-lg backdrop-blur">
       <div className="pointer-events-none absolute inset-0 opacity-60 mix-blend-screen">
@@ -517,10 +513,6 @@ export default function NewsSection({
 
               <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
                 来源：{sourceDisplayName}
-              </span>
-
-              <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
-                节点：{hostDisplayName}
               </span>
             </div>
           </div>

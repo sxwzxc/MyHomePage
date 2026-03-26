@@ -16,6 +16,7 @@ import {
 } from '@/lib/homepage-config';
 import {
   fetchBookmarkFavicon,
+  forceSyncNewsSources,
   getHomepageConfig,
   saveHomepageConfig,
 } from '@/lib/utils';
@@ -115,6 +116,10 @@ export default function SettingsDashboard() {
     template: '',
   });
   const [engineFormError, setEngineFormError] = useState<string | null>(null);
+  const [newsSyncStatus, setNewsSyncStatus] = useState<'idle' | 'syncing' | 'done' | 'error'>(
+    'idle'
+  );
+  const [newsSyncHint, setNewsSyncHint] = useState<string | null>(null);
   const saveHintTimer = useRef<number | null>(null);
 
   const refreshableBookmarks = useMemo(
@@ -483,6 +488,26 @@ export default function SettingsDashboard() {
 
     if (engineForm.id === id) {
       setEngineForm({ id: '', name: '', template: '' });
+    }
+  };
+
+  const handleForceSyncNews = async () => {
+    if (newsSyncStatus === 'syncing') {
+      return;
+    }
+
+    setNewsSyncStatus('syncing');
+    setNewsSyncHint('正在主动同步全部新闻源（忽略缓存）...');
+
+    try {
+      await forceSyncNewsSources();
+      setNewsSyncStatus('done');
+      setNewsSyncHint('主动同步完成：已从源站拉取并刷新缓存。');
+    } catch (error) {
+      setNewsSyncStatus('error');
+      setNewsSyncHint(
+        `同步失败：${error instanceof Error ? error.message : '未知错误'}`
+      );
     }
   };
 
@@ -984,6 +1009,36 @@ export default function SettingsDashboard() {
                   );
                 })}
               </div>
+            </div>
+
+            <div className="mt-3">
+              <button
+                type="button"
+                onClick={handleForceSyncNews}
+                disabled={newsSyncStatus === 'syncing'}
+                className="inline-flex items-center gap-2 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
+              >
+                {newsSyncStatus === 'syncing' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="h-4 w-4" />
+                )}
+                主动同步新闻（忽略缓存）
+              </button>
+
+              {newsSyncHint ? (
+                <p
+                  className={`mt-2 rounded-lg px-3 py-2 text-sm ${
+                    newsSyncStatus === 'error'
+                      ? 'bg-amber-500/20 text-amber-100'
+                      : newsSyncStatus === 'syncing'
+                        ? 'bg-cyan-500/20 text-cyan-100'
+                        : 'bg-emerald-500/20 text-emerald-100'
+                  }`}
+                >
+                  {newsSyncHint}
+                </p>
+              ) : null}
             </div>
 
             <p className="text-shadow-soft mt-2 text-xs text-white/85">

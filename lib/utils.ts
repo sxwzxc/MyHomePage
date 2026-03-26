@@ -169,3 +169,9 @@ export async function verifyUnlockPassword(password: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function forceSyncNewsSources(): Promise<void> {
+  await requestJson('/news?source=auto&limit=30&refresh=1', {
+    method: 'GET',
+  });
+}
