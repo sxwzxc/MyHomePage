@@ -867,14 +867,14 @@ export default function HomepageDashboard() {
       <div className="relative mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="relative rounded-3xl border border-white/15 bg-slate-900/50 p-5 shadow-2xl backdrop-blur-md">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
-              <AnalogClock time={now} size={48} className="shrink-0" />
-              <div>
-                <h1 className="text-shadow-title text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-nowrap items-center justify-between gap-3">
+                <h1 className="text-shadow-title truncate text-2xl font-semibold tracking-tight text-white sm:text-3xl">
                   {config.pageTitle}
                 </h1>
-                <p className="text-shadow-soft mt-0.5 text-sm text-white/95">{config.pageSubtitle}</p>
+                <AnalogClock time={now} size={64} className="shrink-0" />
               </div>
+              <p className="text-shadow-soft mt-0.5 text-sm text-white/95">{config.pageSubtitle}</p>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-white/95 sm:justify-end">
