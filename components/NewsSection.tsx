@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Newspaper,
   ExternalLink,
@@ -101,6 +101,10 @@ function hasAnyNewsItems(payload: NewsApiResponse | null): boolean {
   }
 
   return payload.sources.some((source) => source.items.length > 0);
+}
+
+function isRequestTimeoutMessage(message: string): boolean {
+  return typeof message === 'string' && message.includes('超时');
 }
 
 function pickSourceFromBundle(
@@ -282,6 +286,8 @@ export default function NewsSection({
   const sourceOrderRef = useRef(sourceOrder);
   const autoSourceCursorRef = useRef(autoSourceCursor);
   const bundleRef = useRef<NewsApiResponse | null>(null);
+  const pendingBundleRef = useRef<NewsApiResponse | null>(null);
+  const backgroundRefreshRunningRef = useRef(false);
 
   const normalizedSourceOrder = useMemo(() => {
     const byId = new Map(NEWS_SOURCE_OPTIONS.map((item) => [item.id, item]));
@@ -324,7 +330,7 @@ export default function NewsSection({
     setAccordionValue(defaultCollapsed ? '' : 'news-content');
   }, [defaultCollapsed]);
 
-  const applyBundleToView = (
+  const applyBundleToView = useCallback((
     payload: NewsApiResponse,
     options?: { prependWarning?: string }
   ) => {
@@ -360,7 +366,43 @@ export default function NewsSection({
     const expiresAt = Date.parse(payload.cache.expiresAt);
     setLastUpdatedAt(Number.isFinite(updatedAt) ? new Date(updatedAt) : new Date());
     setCachedUntil(Number.isFinite(expiresAt) ? new Date(expiresAt) : null);
-  };
+  }, []);
+
+  const applyPendingBundleOnSourceSwitch = useCallback((prependWarning: string): boolean => {
+    const pendingBundle = pendingBundleRef.current;
+    if (!pendingBundle) {
+      return false;
+    }
+
+    pendingBundleRef.current = null;
+    bundleRef.current = pendingBundle;
+    setBundle(pendingBundle);
+    applyBundleToView(pendingBundle, { prependWarning });
+    return true;
+  }, [applyBundleToView]);
+
+  const triggerBackgroundRefreshAfterTimeout = useCallback(async () => {
+    if (backgroundRefreshRunningRef.current) {
+      return;
+    }
+
+    backgroundRefreshRunningRef.current = true;
+    try {
+      const refreshed = await fetchNewsFeed({
+        sourceMode: sourceModeRef.current,
+        sourceId: sourceIdRef.current,
+        limit,
+        refresh: true,
+        allowWebCache: false,
+      });
+
+      pendingBundleRef.current = refreshed;
+    } catch {
+      // Keep stale bundle on screen when background refresh fails.
+    } finally {
+      backgroundRefreshRunningRef.current = false;
+    }
+  }, [limit]);
 
   useEffect(() => {
     if (!enabled) {
@@ -416,9 +458,17 @@ export default function NewsSection({
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : '加载失败';
+          const isTimeoutError = isRequestTimeoutMessage(message);
+
           if (usedExpiredWebCache || Boolean(bundleRef.current)) {
             setError(null);
-            setWarning(`旧缓存已展示，刷新最新数据失败：${message}`);
+
+            if (isTimeoutError) {
+              setWarning('请求超时，已保留旧缓存并转后台更新；切换来源时将展示最新内容');
+              void triggerBackgroundRefreshAfterTimeout();
+            } else {
+              setWarning(`旧缓存已展示，刷新最新数据失败：${message}`);
+            }
           } else {
             setError(message);
           }
@@ -436,7 +486,7 @@ export default function NewsSection({
     return () => {
       cancelled = true;
     };
-  }, [enabled, limit, refreshNonce]);
+  }, [enabled, limit, refreshNonce, triggerBackgroundRefreshAfterTimeout, applyBundleToView]);
 
   useEffect(() => {
     if (!bundle || !enabled) {
@@ -445,7 +495,15 @@ export default function NewsSection({
 
     bundleRef.current = bundle;
     applyBundleToView(bundle);
-  }, [bundle, enabled, sourceMode, sourceId, enabledSourceIds, sourceOrder, autoSourceCursor]);
+  }, [bundle, enabled, sourceMode, sourceId, enabledSourceIds, sourceOrder, autoSourceCursor, applyBundleToView]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    applyPendingBundleOnSourceSwitch('已切换来源，已展示后台更新后的内容');
+  }, [enabled, sourceMode, sourceId, autoSourceCursor, applyPendingBundleOnSourceSwitch]);
 
   useEffect(() => {
     setAutoSourceCursor(0);
@@ -484,7 +542,6 @@ export default function NewsSection({
       return;
     }
 
-    webCacheByLimit.delete(limit);
     setRefreshNonce((value) => value + 1);
   };
 
