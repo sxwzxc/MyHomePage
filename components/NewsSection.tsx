@@ -349,11 +349,11 @@ export default function NewsSection({
     const warnings = [...(payload.warnings || [])];
 
     if (sourceModeRef.current === 'manual' && active.items.length === 0) {
-      warnings.push(`来源 ${active.sourceLabel} 暂无可展示数据`);
+      warnings.push(`来源 ${active.sourceLabel} 暂无可展示数据，请稍后刷新重试`);
     }
 
     if (payload.cache.isStale) {
-      warnings.unshift('已展示缓存内容（不会清空当前列表），后台正在分批刷新，预计1-2分钟完成');
+      warnings.unshift('后台正在刷新，可稍后手动刷新更新数据');
     }
 
     if (options?.prependWarning) {
@@ -431,7 +431,7 @@ export default function NewsSection({
           bundleRef.current = staleWebCache;
           setBundle(staleWebCache);
           applyBundleToView(staleWebCache, {
-            prependWarning: '已先展示旧缓存，正在刷新最新数据…',
+            prependWarning: '正在刷新最新数据…',
           });
           setIsLoading(false);
           setIsSyncing(true);
@@ -579,11 +579,6 @@ export default function NewsSection({
                   <span className="flex items-center gap-1 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/75">
                     <Clock3 className="h-3 w-3" />
                     更新 {lastUpdatedAt.toLocaleTimeString('zh-CN', { hour12: false })}
-                  </span>
-                ) : null}
-                {cachedUntil ? (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-white/70">
-                    缓存至 {cachedUntil.toLocaleTimeString('zh-CN', { hour12: false })}
                   </span>
                 ) : null}
               </div>
