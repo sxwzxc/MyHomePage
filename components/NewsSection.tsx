@@ -353,7 +353,7 @@ export default function NewsSection({
     }
 
     if (payload.cache.isStale) {
-      warnings.unshift('当前为缓存内容，后台正在分批刷新，预计1-2分钟完成');
+      warnings.unshift('已展示缓存内容（不会清空当前列表），后台正在分批刷新，预计1-2分钟完成');
     }
 
     if (options?.prependWarning) {
@@ -665,80 +665,86 @@ export default function NewsSection({
                   重试
                 </button>
               </div>
-            ) : warning ? (
-              <div className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-3 text-sm text-amber-100">
-                {warning}
-              </div>
-            ) : news.length === 0 ? (
-              <div className="py-4 text-center text-sm text-white/70">
-                暂无热点新闻
-              </div>
             ) : (
-              <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                {news.map((repo, index) => (
-                  <div
-                    key={`${repo.sourceId}-${repo.link || repo.title}-${index}`}
-                    className="group relative overflow-hidden rounded-xl border border-white/10 bg-slate-950/50 p-4 transition-all hover:-translate-y-[1px] hover:border-white/30 hover:bg-slate-900/60"
-                  >
-                    <div className="absolute right-3 top-3 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-medium text-white/80">
-                      #{index + 1}
-                    </div>
+              <>
+                {warning ? (
+                  <div className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-3 py-3 text-sm text-amber-100">
+                    {warning}
+                  </div>
+                ) : null}
 
-                    <div className="flex gap-3">
-                      {repo.cover ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={repo.cover}
-                          alt={repo.title}
-                          className="mt-1 h-16 w-20 shrink-0 rounded-lg border border-white/10 object-cover"
-                        />
-                      ) : (
-                        <div className="mt-1 flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white/10 text-cyan-300">
-                          <TrendingUp className="h-5 w-5" />
+                {news.length === 0 ? (
+                  <div className="py-4 text-center text-sm text-white/70">
+                    暂无热点新闻
+                  </div>
+                ) : (
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    {news.map((repo, index) => (
+                      <div
+                        key={`${repo.sourceId}-${repo.link || repo.title}-${index}`}
+                        className="group relative overflow-hidden rounded-xl border border-white/10 bg-slate-950/50 p-4 transition-all hover:-translate-y-[1px] hover:border-white/30 hover:bg-slate-900/60"
+                      >
+                        <div className="absolute right-3 top-3 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-medium text-white/80">
+                          #{index + 1}
                         </div>
-                      )}
 
-                      <div className="min-w-0 flex-1">
-                        {repo.link ? (
-                          <a
-                            href={repo.link}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex max-w-full items-start gap-1"
-                          >
-                            <h3 className="text-shadow-soft line-clamp-2 text-sm font-semibold text-white group-hover:text-cyan-200">
-                              {repo.title}
-                            </h3>
-                            <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/40 transition group-hover:text-white/70" />
-                          </a>
-                        ) : (
-                          <h3 className="text-shadow-soft line-clamp-2 text-sm font-semibold text-white">
-                            {repo.title}
-                          </h3>
-                        )}
+                        <div className="flex gap-3">
+                          {repo.cover ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={repo.cover}
+                              alt={repo.title}
+                              className="mt-1 h-16 w-20 shrink-0 rounded-lg border border-white/10 object-cover"
+                            />
+                          ) : (
+                            <div className="mt-1 flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-white/10 text-cyan-300">
+                              <TrendingUp className="h-5 w-5" />
+                            </div>
+                          )}
 
-                        {repo.summary ? (
-                          <p className="mt-1 line-clamp-2 text-xs text-white/75">{repo.summary}</p>
-                        ) : null}
+                          <div className="min-w-0 flex-1">
+                            {repo.link ? (
+                              <a
+                                href={repo.link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex max-w-full items-start gap-1"
+                              >
+                                <h3 className="text-shadow-soft line-clamp-2 text-sm font-semibold text-white group-hover:text-cyan-200">
+                                  {repo.title}
+                                </h3>
+                                <ExternalLink className="mt-0.5 h-3.5 w-3.5 shrink-0 text-white/40 transition group-hover:text-white/70" />
+                              </a>
+                            ) : (
+                              <h3 className="text-shadow-soft line-clamp-2 text-sm font-semibold text-white">
+                                {repo.title}
+                              </h3>
+                            )}
 
-                        <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
-                          <span className="rounded-full bg-white/5 px-2 py-1">{repo.sourceLabel}</span>
-                          {repo.hot ? (
-                            <span className="rounded-full bg-cyan-500/20 px-2 py-1 text-cyan-100">
-                              {repo.hot}
-                            </span>
-                          ) : null}
-                          {repo.publishedAt ? (
-                            <span className="rounded-full bg-white/5 px-2 py-1">
-                              {repo.publishedAt}
-                            </span>
-                          ) : null}
+                            {repo.summary ? (
+                              <p className="mt-1 line-clamp-2 text-xs text-white/75">{repo.summary}</p>
+                            ) : null}
+
+                            <div className="mt-3 flex flex-wrap items-center gap-2 text-[11px] text-white/70">
+                              <span className="rounded-full bg-white/5 px-2 py-1">{repo.sourceLabel}</span>
+                              {repo.hot ? (
+                                <span className="rounded-full bg-cyan-500/20 px-2 py-1 text-cyan-100">
+                                  {repo.hot}
+                                </span>
+                              ) : null}
+                              {repo.publishedAt ? (
+                                <span className="rounded-full bg-white/5 px-2 py-1">
+                                  {repo.publishedAt}
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
                         </div>
                       </div>
-                    </div>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
           </AccordionContent>
         </AccordionItem>
