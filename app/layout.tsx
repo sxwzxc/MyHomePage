@@ -16,7 +16,25 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN">
-      <body className={inter.className}>{children}</body>
+      <body className={inter.className}>
+        {children}
+
+        <footer className="border-t border-white/10 bg-slate-950/85 px-4 py-4 text-center text-xs text-slate-300 backdrop-blur sm:px-6">
+          <p>
+            Made with ❤ by{' '}
+            <span className="font-semibold text-slate-100">sxwzxc</span>
+            {' '}·{' '}
+            <a
+              href="https://github.com/sxwzxc/MyHomePage"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-cyan-300 underline-offset-4 transition hover:text-cyan-200 hover:underline"
+            >
+              GitHub Repository
+            </a>
+          </p>
+        </footer>
+      </body>
     </html>
   );
 }
