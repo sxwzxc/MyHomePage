@@ -10,6 +10,7 @@ const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_FETCH_LIMIT = 30;
 const CACHE_CHUNK_MAX_BYTES = 20 * 1024 * 1024;
 const SOURCE_FETCH_TIMEOUT_MS = 15 * 1000;
+const SOURCE_RETRY_DELAY_MS = 3 * 1000;
 const BACKGROUND_REFRESH_BATCH_SIZE = 3;
 const EO_TIMEOUT_SETTING = {
   connectTimeout: 300000,
@@ -83,6 +84,13 @@ function isAbortError(error) {
     'name' in error &&
     error.name === 'AbortError'
   );
+}
+
+function sleep(ms) {
+  const timeout = Number.isFinite(Number(ms)) ? Math.max(0, Number(ms)) : 0;
+  return new Promise((resolve) => {
+    setTimeout(resolve, timeout);
+  });
 }
 
 function getKvBinding(env) {
@@ -503,11 +511,61 @@ async function fetchSourceFromHosts(sourceId, limit) {
   };
 }
 
-async function fetchAllSources(limit = CACHE_FETCH_LIMIT) {
-  const settled = [];
-  for (const sourceId of AUTO_SOURCE_ORDER) {
-    settled.push(await fetchSourceFromHosts(sourceId, limit));
+function shouldRetrySourceResult(item) {
+  return !item || !item.ok || (Array.isArray(item.items) && item.items.length === 0);
+}
+
+function hasSourceItems(source) {
+  return Boolean(source && Array.isArray(source.items) && source.items.length > 0);
+}
+
+async function retryFailedOrEmptySources(results, limit) {
+  const retryTargets = (Array.isArray(results) ? results : []).filter((item) =>
+    shouldRetrySourceResult(item)
+  );
+
+  if (retryTargets.length === 0) {
+    return new Map();
   }
+
+  await sleep(SOURCE_RETRY_DELAY_MS);
+
+  const retried = await Promise.all(
+    retryTargets.map(async (item) => ({
+      ...(await fetchSourceFromHosts(item.sourceId, limit)),
+      retried: true,
+    }))
+  );
+
+  return new Map(retried.map((item) => [item.sourceId, item]));
+}
+
+function buildSourceWarning(item) {
+  if (!item) {
+    return '';
+  }
+
+  if (!item.ok) {
+    const reason = item.errors?.[0] || '未知错误';
+    const retryHint = item.retried ? `（等待${SOURCE_RETRY_DELAY_MS / 1000}秒后重试仍失败）` : '';
+    return `来源 ${item.source.label} 请求失败${retryHint}：${reason}`;
+  }
+
+  if ((item.items || []).length === 0) {
+    const retryHint = item.retried ? `（等待${SOURCE_RETRY_DELAY_MS / 1000}秒后重试仍为空）` : '';
+    return `来源 ${item.source.label} 暂无可展示内容${retryHint}`;
+  }
+
+  return '';
+}
+
+async function fetchAllSources(limit = CACHE_FETCH_LIMIT) {
+  const firstRound = await Promise.all(
+    AUTO_SOURCE_ORDER.map((sourceId) => fetchSourceFromHosts(sourceId, limit))
+  );
+
+  const retriedBySourceId = await retryFailedOrEmptySources(firstRound, limit);
+  const settled = firstRound.map((item) => retriedBySourceId.get(item.sourceId) || item);
 
   const sources = {};
   const warnings = [];
@@ -520,14 +578,9 @@ async function fetchAllSources(limit = CACHE_FETCH_LIMIT) {
       items: item.items,
     };
 
-    if (!item.ok) {
-      const reason = item.errors[0] || '未知错误';
-      warnings.push(`来源 ${item.source.label} 请求失败：${reason}`);
-      continue;
-    }
-
-    if (item.items.length === 0) {
-      warnings.push(`来源 ${item.source.label} 暂无可展示内容`);
+    const warning = buildSourceWarning(item);
+    if (warning) {
+      warnings.push(warning);
     }
   }
 
@@ -671,28 +724,45 @@ async function refreshNewsCacheBatch(kv, options = {}) {
   };
 
   // Fetch all sources in the batch concurrently
-  const fetchResults = await Promise.all(
+  const firstRoundResults = await Promise.all(
     targetSourceIds.map((sourceId) => fetchSourceFromHosts(sourceId, CACHE_FETCH_LIMIT))
+  );
+
+  const retriedBySourceId = await retryFailedOrEmptySources(
+    firstRoundResults,
+    CACHE_FETCH_LIMIT
+  );
+
+  const fetchResults = firstRoundResults.map(
+    (item) => retriedBySourceId.get(item.sourceId) || item
   );
 
   // Process results
   for (let index = 0; index < fetchResults.length; index += 1) {
     const fetched = fetchResults[index];
     const sourceId = targetSourceIds[index];
-
-    nextSources[sourceId] = {
+    const previousSource = baseBundle.sources[sourceId];
+    const nextSource = {
       sourceId: fetched.source.id,
       sourceLabel: fetched.source.label,
       host: fetched.host,
       items: fetched.items,
     };
 
-    if (!fetched.ok) {
-      warnings.push(
-        `来源 ${fetched.source.label} 请求失败：${fetched.errors[0] || '未知错误'}`
-      );
-    } else if (fetched.items.length === 0) {
-      warnings.push(`来源 ${fetched.source.label} 暂无可展示内容`);
+    const shouldOverwrite = fetched.ok && fetched.items.length > 0;
+    const canFallbackToPrevious = hasSourceItems(previousSource);
+
+    if (shouldOverwrite || !canFallbackToPrevious) {
+      nextSources[sourceId] = nextSource;
+    }
+
+    const warning = buildSourceWarning(fetched);
+    if (warning) {
+      if (canFallbackToPrevious && !shouldOverwrite) {
+        warnings.push(`${warning}，已继续使用旧缓存`);
+      } else {
+        warnings.push(warning);
+      }
     }
   }
 
@@ -723,8 +793,11 @@ async function refreshSingleSourceCache(kv, sourceId) {
     return false;
   }
 
-  const fetched = await fetchSourceFromHosts(sourceId, CACHE_FETCH_LIMIT);
-  if (!fetched.ok) {
+  const firstRound = await fetchSourceFromHosts(sourceId, CACHE_FETCH_LIMIT);
+  const retriedBySourceId = await retryFailedOrEmptySources([firstRound], CACHE_FETCH_LIMIT);
+  const fetched = retriedBySourceId.get(sourceId) || firstRound;
+
+  if (!fetched.ok || fetched.items.length === 0) {
     return false;
   }
 

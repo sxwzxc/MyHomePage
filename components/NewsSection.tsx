@@ -70,14 +70,14 @@ type WebCacheEntry = {
 
 const webCacheByLimit = new Map<number, WebCacheEntry>();
 
-function getWebCache(limit: number): NewsApiResponse | null {
+function getWebCache(limit: number, options?: { allowExpired?: boolean }): NewsApiResponse | null {
   const cached = webCacheByLimit.get(limit);
   if (!cached) {
     return null;
   }
 
-  if (Date.now() - cached.fetchedAt > WEB_CACHE_TTL_MS) {
-    webCacheByLimit.delete(limit);
+  const expired = Date.now() - cached.fetchedAt > WEB_CACHE_TTL_MS;
+  if (expired && !options?.allowExpired) {
     return null;
   }
 
@@ -89,6 +89,18 @@ function setWebCache(limit: number, data: NewsApiResponse) {
     fetchedAt: Date.now(),
     data,
   });
+}
+
+function hasAnyNewsItems(payload: NewsApiResponse | null): boolean {
+  if (!payload) {
+    return false;
+  }
+
+  if (Array.isArray(payload.items) && payload.items.length > 0) {
+    return true;
+  }
+
+  return payload.sources.some((source) => source.items.length > 0);
 }
 
 function pickSourceFromBundle(
@@ -206,7 +218,14 @@ async function fetchNewsFeed({
     }
 
     const payload = (await response.json()) as NewsApiResponse;
-    setWebCache(limit, payload);
+    const previous = getWebCache(limit, { allowExpired: true });
+    const shouldOverwriteCache =
+      hasAnyNewsItems(payload) || !previous || !hasAnyNewsItems(previous);
+
+    if (shouldOverwriteCache) {
+      setWebCache(limit, payload);
+    }
+
     return payload;
   } catch (error) {
     if (error instanceof Error && error.name === 'AbortError') {
@@ -305,7 +324,10 @@ export default function NewsSection({
     setAccordionValue(defaultCollapsed ? '' : 'news-content');
   }, [defaultCollapsed]);
 
-  const applyBundleToView = (payload: NewsApiResponse) => {
+  const applyBundleToView = (
+    payload: NewsApiResponse,
+    options?: { prependWarning?: string }
+  ) => {
     const active = pickSourceFromBundle(
       payload,
       sourceModeRef.current,
@@ -328,6 +350,10 @@ export default function NewsSection({
       warnings.unshift('当前为缓存内容，后台正在分批刷新，预计1-2分钟完成');
     }
 
+    if (options?.prependWarning) {
+      warnings.unshift(options.prependWarning);
+    }
+
     setWarning(warnings[0] || null);
 
     const updatedAt = Date.parse(payload.cache.updatedAt);
@@ -345,11 +371,30 @@ export default function NewsSection({
 
     async function load() {
       const hasBundle = Boolean(bundleRef.current);
+      const isManualRefresh = refreshNonce > 0;
+
       setIsLoading(!hasBundle);
+      setIsSyncing(hasBundle || isManualRefresh);
       setError(null);
       setWarning(null);
 
-      const isManualRefresh = refreshNonce > 0;
+      let usedExpiredWebCache = false;
+
+      if (!hasBundle && !isManualRefresh) {
+        const freshWebCache = getWebCache(limit);
+        const staleWebCache = getWebCache(limit, { allowExpired: true });
+
+        if (!freshWebCache && staleWebCache) {
+          usedExpiredWebCache = true;
+          bundleRef.current = staleWebCache;
+          setBundle(staleWebCache);
+          applyBundleToView(staleWebCache, {
+            prependWarning: '已先展示旧缓存，正在刷新最新数据…',
+          });
+          setIsLoading(false);
+          setIsSyncing(true);
+        }
+      }
 
       try {
         const result = await fetchNewsFeed({
@@ -370,7 +415,13 @@ export default function NewsSection({
         setIsSyncing(false);
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : '加载失败');
+          const message = err instanceof Error ? err.message : '加载失败';
+          if (usedExpiredWebCache || Boolean(bundleRef.current)) {
+            setError(null);
+            setWarning(`旧缓存已展示，刷新最新数据失败：${message}`);
+          } else {
+            setError(message);
+          }
           setIsSyncing(false);
         }
       } finally {
