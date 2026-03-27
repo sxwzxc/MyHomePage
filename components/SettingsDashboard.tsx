@@ -2,10 +2,12 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, CloudSun, Loader2, PenLine, RefreshCcw, Search, Sparkles, Trash2, Newspaper } from 'lucide-react';
+import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowDown, ArrowUp, CloudSun, Download, Loader2, Newspaper, PenLine, RefreshCcw, Search, Sparkles, Trash2, Upload } from 'lucide-react';
 import {
   Bookmark,
+  createBookmarkSettingsBackupPayload,
+  parseBookmarkSettingsBackupPayload,
   HomepageConfig,
   SearchEngine,
   BackgroundConfig,
@@ -104,11 +106,16 @@ export default function SettingsDashboard() {
     isCustomIcon: false,
   });
   const [bookmarkFormError, setBookmarkFormError] = useState<string | null>(null);
+  const [isSubmittingBookmarkForm, setIsSubmittingBookmarkForm] = useState(false);
   const [faviconLoading, setFaviconLoading] = useState(false);
   const [bulkRefreshStatus, setBulkRefreshStatus] = useState<
     'idle' | 'refreshing' | 'done' | 'error'
   >('idle');
   const [bulkRefreshHint, setBulkRefreshHint] = useState<string | null>(null);
+  const [bookmarkTransferStatus, setBookmarkTransferStatus] = useState<
+    'idle' | 'processing' | 'done' | 'error'
+  >('idle');
+  const [bookmarkTransferHint, setBookmarkTransferHint] = useState<string | null>(null);
 
   const [engineForm, setEngineForm] = useState<SearchEngineFormState>({
     id: '',
@@ -121,6 +128,7 @@ export default function SettingsDashboard() {
   );
   const [newsSyncHint, setNewsSyncHint] = useState<string | null>(null);
   const saveHintTimer = useRef<number | null>(null);
+  const bookmarkImportInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshableBookmarks = useMemo(
     () => config.bookmarks.filter((bookmark) => !isCustomIconBookmark(bookmark)),
@@ -284,6 +292,11 @@ export default function SettingsDashboard() {
 
   const handleBookmarkSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (isSubmittingBookmarkForm || faviconLoading) {
+      return;
+    }
+
     setBookmarkFormError(null);
 
     const title = bookmarkForm.title.trim();
@@ -302,53 +315,59 @@ export default function SettingsDashboard() {
       return;
     }
 
+    setIsSubmittingBookmarkForm(true);
+
     let finalIcon = iconInput;
     let finalIsCustomIcon = iconInput ? bookmarkForm.isCustomIcon : false;
 
-    if (!finalIcon) {
-      setFaviconLoading(true);
-      const autoIcon = await fetchBookmarkFavicon(normalizedUrl);
-      setFaviconLoading(false);
-      if (autoIcon) {
-        finalIcon = autoIcon;
+    try {
+      if (!finalIcon) {
+        setFaviconLoading(true);
+        const autoIcon = await fetchBookmarkFavicon(normalizedUrl);
+        if (autoIcon) {
+          finalIcon = autoIcon;
+        }
+        finalIsCustomIcon = false;
       }
-      finalIsCustomIcon = false;
+
+      const editing = Boolean(bookmarkForm.id);
+      const id = editing ? bookmarkForm.id : createId('bookmark');
+
+      updateConfig((prev) => {
+        const nextBookmarks = editing
+          ? prev.bookmarks.map((item) =>
+              item.id === id
+                ? {
+                    id,
+                    title,
+                    url: normalizedUrl,
+                    icon: finalIcon || undefined,
+                    isCustomIcon: finalIcon ? finalIsCustomIcon : false,
+                  }
+                : item
+            )
+          : [
+              ...prev.bookmarks,
+              {
+                id,
+                title,
+                url: normalizedUrl,
+                icon: finalIcon || undefined,
+                isCustomIcon: finalIcon ? finalIsCustomIcon : false,
+              },
+            ];
+
+        return {
+          ...prev,
+          bookmarks: nextBookmarks,
+        };
+      });
+
+      setBookmarkForm({ id: '', title: '', url: '', icon: '', isCustomIcon: false });
+    } finally {
+      setFaviconLoading(false);
+      setIsSubmittingBookmarkForm(false);
     }
-
-    const editing = Boolean(bookmarkForm.id);
-    const id = editing ? bookmarkForm.id : createId('bookmark');
-
-    updateConfig((prev) => {
-      const nextBookmarks = editing
-        ? prev.bookmarks.map((item) =>
-            item.id === id
-              ? {
-                  id,
-                  title,
-                  url: normalizedUrl,
-                  icon: finalIcon || undefined,
-                  isCustomIcon: finalIcon ? finalIsCustomIcon : false,
-                }
-              : item
-          )
-        : [
-            ...prev.bookmarks,
-            {
-              id,
-              title,
-              url: normalizedUrl,
-              icon: finalIcon || undefined,
-              isCustomIcon: finalIcon ? finalIsCustomIcon : false,
-            },
-          ];
-
-      return {
-        ...prev,
-        bookmarks: nextBookmarks,
-      };
-    });
-
-    setBookmarkForm({ id: '', title: '', url: '', icon: '', isCustomIcon: false });
   };
 
   const editBookmark = (bookmark: Bookmark) => {
@@ -522,6 +541,100 @@ export default function SettingsDashboard() {
       setNewsSyncStatus('error');
       setNewsSyncHint(
         `同步失败：${error instanceof Error ? error.message : '未知错误'}`
+      );
+    }
+  };
+
+  const handleExportBookmarkSettings = () => {
+    try {
+      const payload = createBookmarkSettingsBackupPayload(config);
+      const fileBody = JSON.stringify(payload, null, 2);
+      const blob = new Blob([fileBody], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      anchor.href = url;
+      anchor.download = `bookmark-settings-${stamp}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+
+      setBookmarkTransferStatus('done');
+      setBookmarkTransferHint(`导出成功：共 ${config.bookmarks.length} 个书签。`);
+    } catch (error) {
+      setBookmarkTransferStatus('error');
+      setBookmarkTransferHint(
+        `导出失败：${error instanceof Error ? error.message : '未知错误'}`
+      );
+    }
+  };
+
+  const handleImportBookmarkSettingsClick = () => {
+    if (bookmarkTransferStatus === 'processing') {
+      return;
+    }
+
+    bookmarkImportInputRef.current?.click();
+  };
+
+  const handleImportBookmarkSettingsFile = async (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0] || null;
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    setBookmarkTransferStatus('processing');
+    setBookmarkTransferHint(`正在导入 ${file.name}...`);
+
+    try {
+      const text = await file.text();
+
+      let parsedJson: unknown;
+      try {
+        parsedJson = JSON.parse(text);
+      } catch {
+        throw new Error('文件不是合法 JSON');
+      }
+
+      const result = parseBookmarkSettingsBackupPayload(parsedJson);
+      const nextConfig: HomepageConfig = {
+        ...config,
+        ...result.patch,
+        updatedAt: new Date().toISOString(),
+      };
+
+      const saved = await persistConfig(nextConfig);
+      if (!saved) {
+        setBookmarkTransferStatus('error');
+        setBookmarkTransferHint('导入解析成功，但保存失败，请稍后重试。');
+        return;
+      }
+
+      const hintParts = [
+        `已导入 ${result.importedBookmarks}/${result.totalBookmarks} 个书签`,
+      ];
+
+      if (result.skippedBookmarks > 0) {
+        hintParts.push(`已跳过 ${result.skippedBookmarks} 项无效或重复数据`);
+      }
+
+      if (result.warnings.length > 0) {
+        const warningPreview = result.warnings.slice(0, 2).join('；');
+        const suffix = result.warnings.length > 2 ? '；...' : '';
+        hintParts.push(`提示：${warningPreview}${suffix}`);
+      }
+
+      setBookmarkTransferStatus(result.skippedBookmarks > 0 ? 'error' : 'done');
+      setBookmarkTransferHint(hintParts.join('，'));
+    } catch (error) {
+      setBookmarkTransferStatus('error');
+      setBookmarkTransferHint(
+        `导入失败：${error instanceof Error ? error.message : '未知错误'}`
       );
     }
   };
@@ -1254,6 +1367,39 @@ export default function SettingsDashboard() {
               )}
               刷新自动图标（{refreshableBookmarks.length}）
             </button>
+
+            <div className="flex items-center gap-2">
+              <input
+                ref={bookmarkImportInputRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={handleImportBookmarkSettingsFile}
+              />
+
+              <button
+                type="button"
+                onClick={handleExportBookmarkSettings}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+              >
+                <Download className="h-4 w-4" />
+                导出书签设置
+              </button>
+
+              <button
+                type="button"
+                onClick={handleImportBookmarkSettingsClick}
+                disabled={bookmarkTransferStatus === 'processing'}
+                className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {bookmarkTransferStatus === 'processing' ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                导入书签设置
+              </button>
+            </div>
           </div>
 
           <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
@@ -1277,6 +1423,20 @@ export default function SettingsDashboard() {
               }`}
             >
               {bulkRefreshHint}
+            </p>
+          ) : null}
+
+          {bookmarkTransferHint ? (
+            <p
+              className={`mt-2 rounded-lg px-3 py-2 text-sm ${
+                bookmarkTransferStatus === 'error'
+                  ? 'bg-amber-500/20 text-amber-100'
+                  : bookmarkTransferStatus === 'processing'
+                    ? 'bg-cyan-500/20 text-cyan-100'
+                    : 'bg-emerald-500/20 text-emerald-100'
+              }`}
+            >
+              {bookmarkTransferHint}
             </p>
           ) : null}
 
@@ -1316,10 +1476,16 @@ export default function SettingsDashboard() {
             />
             <button
               type="submit"
-              disabled={faviconLoading}
+              disabled={faviconLoading || isSubmittingBookmarkForm}
               className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400 disabled:opacity-70"
             >
-              {faviconLoading ? '抓取图标中...' : bookmarkForm.id ? '更新书签' : '新增书签'}
+              {faviconLoading
+                ? '抓取图标中...'
+                : isSubmittingBookmarkForm
+                  ? '提交中...'
+                  : bookmarkForm.id
+                    ? '更新书签'
+                    : '新增书签'}
             </button>
           </form>
 

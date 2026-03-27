@@ -193,6 +193,7 @@ export default function HomepageDashboard() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isFetchingEditIcon, setIsFetchingEditIcon] = useState(false);
   const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
+  const configRef = useRef(config);
   const autoFaviconRefreshRunningRef = useRef(false);
   const pendingUnlockActionRef = useRef<null | (() => void)>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -329,6 +330,10 @@ export default function HomepageDashboard() {
   useEffect(() => {
     setIsUnlocked(isSettingsUnlocked());
   }, []);
+
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
 
   useEffect(() => {
     if (autoFaviconRefreshRunningRef.current) {
@@ -670,6 +675,10 @@ export default function HomepageDashboard() {
   const handleQuickAddBookmark = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (isAddingBookmark) {
+      return;
+    }
+
     if (!ensureUnlocked('解锁后可添加书签')) {
       return;
     }
@@ -700,19 +709,45 @@ export default function HomepageDashboard() {
       isCustomIcon: false,
     };
 
+    const baseConfig = configRef.current;
+
     const optimisticConfig: HomepageConfig = {
-      ...config,
-      bookmarks: [...config.bookmarks, newBookmark],
+      ...baseConfig,
+      bookmarks: [...baseConfig.bookmarks, newBookmark],
       updatedAt: new Date().toISOString(),
     };
 
     setConfig(optimisticConfig);
     setQuickAddForm({ title: '', url: '' });
     setShowQuickAdd(false);
-    setIsAddingBookmark(false);
 
     try {
-      const savedConfig = await saveHomepageConfig(optimisticConfig);
+      let savedConfig = await saveHomepageConfig(optimisticConfig);
+
+      if (!savedConfig.bookmarks.some((bookmark) => bookmark.id === newBookmarkId)) {
+        const retryConfig: HomepageConfig = {
+          ...savedConfig,
+          bookmarks: [...savedConfig.bookmarks, newBookmark],
+          updatedAt: new Date().toISOString(),
+        };
+
+        const retrySaved = await saveHomepageConfig(retryConfig);
+        const retryHasBookmark = retrySaved.bookmarks.some(
+          (bookmark) => bookmark.id === newBookmarkId
+        );
+
+        savedConfig = retryHasBookmark
+          ? retrySaved
+          : {
+              ...retrySaved,
+              bookmarks: [...retrySaved.bookmarks, newBookmark],
+            };
+
+        if (!retryHasBookmark) {
+          setQuickAddError('检测到并发保存冲突，已在当前页面保留新书签，请稍后再试同步。');
+        }
+      }
+
       setConfig(savedConfig);
 
       void (async () => {
@@ -722,9 +757,18 @@ export default function HomepageDashboard() {
         }
 
         try {
+          const latestConfig = configRef.current;
+          const stillExists = latestConfig.bookmarks.some(
+            (bookmark) => bookmark.id === newBookmarkId
+          );
+
+          if (!stillExists) {
+            return;
+          }
+
           const withIconConfig: HomepageConfig = {
-            ...savedConfig,
-            bookmarks: savedConfig.bookmarks.map((bookmark) =>
+            ...latestConfig,
+            bookmarks: latestConfig.bookmarks.map((bookmark) =>
               bookmark.id === newBookmarkId
                 ? {
                     ...bookmark,
@@ -737,7 +781,9 @@ export default function HomepageDashboard() {
           };
 
           const iconSaved = await saveHomepageConfig(withIconConfig);
-          setConfig(iconSaved);
+          if (iconSaved.bookmarks.some((bookmark) => bookmark.id === newBookmarkId)) {
+            setConfig(iconSaved);
+          }
         } catch {
           // Keep initial letter fallback when icon sync fails.
         }
@@ -746,6 +792,8 @@ export default function HomepageDashboard() {
       setQuickAddError(
         `已添加到当前页面，但同步失败：${error instanceof Error ? error.message : '未知错误'}`
       );
+    } finally {
+      setIsAddingBookmark(false);
     }
   };
 

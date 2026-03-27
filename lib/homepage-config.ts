@@ -72,6 +72,31 @@ export type HomepageConfig = {
   news: NewsConfig;
 };
 
+export type BookmarkSettingsConfig = Pick<
+  HomepageConfig,
+  | 'bookmarkLayoutMode'
+  | 'bookmarkColumns'
+  | 'faviconAutoRefreshEnabled'
+  | 'faviconAutoRefreshMinutes'
+  | 'faviconLastRefreshAt'
+  | 'bookmarks'
+>;
+
+export type BookmarkSettingsBackupPayload = {
+  kind: 'homepage-bookmark-settings';
+  schemaVersion: 1;
+  exportedAt: string;
+  data: BookmarkSettingsConfig;
+};
+
+export type BookmarkSettingsImportResult = {
+  patch: BookmarkSettingsConfig;
+  warnings: string[];
+  totalBookmarks: number;
+  importedBookmarks: number;
+  skippedBookmarks: number;
+};
+
 export const DEFAULT_SEARCH_ENGINES: SearchEngine[] = [
   {
     id: 'google',
@@ -143,12 +168,29 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   },
 };
 
+const BOOKMARK_SETTINGS_BACKUP_KIND = 'homepage-bookmark-settings';
+const BOOKMARK_SETTINGS_BACKUP_SCHEMA_VERSION = 1;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
+}
+
+function normalizeTimestampString(value: unknown, fallback: string): string {
+  const text = asString(value).trim();
+  if (!text) {
+    return fallback;
+  }
+
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) {
+    return fallback;
+  }
+
+  return new Date(parsed).toISOString();
 }
 
 function normalizeSearchEngines(value: unknown): SearchEngine[] {
@@ -220,6 +262,151 @@ function normalizeBookmarks(value: unknown): Bookmark[] {
     .filter((item): item is NonNullable<typeof item> => Boolean(item));
 
   return bookmarks;
+}
+
+function normalizeBookmarksFromBackup(value: unknown): {
+  bookmarks: Bookmark[];
+  warnings: string[];
+  total: number;
+} {
+  if (!Array.isArray(value)) {
+    throw new Error('导入文件缺少 bookmarks 数组');
+  }
+
+  const warnings: string[] = [];
+  const normalizedBookmarks: Bookmark[] = [];
+  const seenIds = new Set<string>();
+  const seenUrls = new Set<string>();
+
+  value.forEach((item, index) => {
+    const row = index + 1;
+
+    if (!isRecord(item)) {
+      warnings.push(`第 ${row} 项不是对象，已跳过`);
+      return;
+    }
+
+    const id = asString(item.id).trim();
+    const title = asString(item.title).trim();
+    const url = asString(item.url).trim();
+    const icon = asString(item.icon).trim();
+
+    if (!id || !title || !url) {
+      warnings.push(`第 ${row} 项缺少 id/title/url，已跳过`);
+      return;
+    }
+
+    let normalizedUrl = '';
+    try {
+      normalizedUrl = new URL(url).toString();
+    } catch {
+      warnings.push(`第 ${row} 项 URL 不合法（${url}），已跳过`);
+      return;
+    }
+
+    if (seenIds.has(id)) {
+      warnings.push(`第 ${row} 项 id 重复（${id}），已跳过`);
+      return;
+    }
+
+    if (seenUrls.has(normalizedUrl)) {
+      warnings.push(`第 ${row} 项 URL 重复（${normalizedUrl}），已跳过`);
+      return;
+    }
+
+    seenIds.add(id);
+    seenUrls.add(normalizedUrl);
+
+    const hasCustomFlag = typeof item.isCustomIcon === 'boolean';
+    const inferredCustom = Boolean(
+      icon && !icon.startsWith('http') && !icon.startsWith('data:')
+    );
+
+    normalizedBookmarks.push({
+      id,
+      title,
+      url: normalizedUrl,
+      icon: icon || undefined,
+      isCustomIcon: hasCustomFlag ? Boolean(item.isCustomIcon) : inferredCustom,
+    });
+  });
+
+  return {
+    bookmarks: normalizedBookmarks,
+    warnings,
+    total: value.length,
+  };
+}
+
+export function createBookmarkSettingsBackupPayload(
+  config: HomepageConfig
+): BookmarkSettingsBackupPayload {
+  return {
+    kind: BOOKMARK_SETTINGS_BACKUP_KIND,
+    schemaVersion: BOOKMARK_SETTINGS_BACKUP_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: {
+      bookmarkLayoutMode: config.bookmarkLayoutMode,
+      bookmarkColumns: config.bookmarkColumns,
+      faviconAutoRefreshEnabled: config.faviconAutoRefreshEnabled,
+      faviconAutoRefreshMinutes: config.faviconAutoRefreshMinutes,
+      faviconLastRefreshAt: config.faviconLastRefreshAt,
+      bookmarks: config.bookmarks.map((item) => ({ ...item })),
+    },
+  };
+}
+
+export function parseBookmarkSettingsBackupPayload(
+  value: unknown
+): BookmarkSettingsImportResult {
+  if (!isRecord(value)) {
+    throw new Error('导入文件不是有效 JSON 对象');
+  }
+
+  const kind = asString(value.kind).trim();
+  if (kind && kind !== BOOKMARK_SETTINGS_BACKUP_KIND) {
+    throw new Error('导入文件类型不匹配，请选择书签设置备份文件');
+  }
+
+  const schemaVersion = Number(value.schemaVersion ?? BOOKMARK_SETTINGS_BACKUP_SCHEMA_VERSION);
+  if (
+    Number.isFinite(schemaVersion) &&
+    schemaVersion > BOOKMARK_SETTINGS_BACKUP_SCHEMA_VERSION
+  ) {
+    throw new Error('导入文件版本过高，请先升级当前应用后再导入');
+  }
+
+  const payload = isRecord(value.data) ? value.data : value;
+  const { bookmarks, warnings, total } = normalizeBookmarksFromBackup(payload.bookmarks);
+
+  if (bookmarks.length === 0) {
+    throw new Error('导入失败：文件中没有可用书签');
+  }
+
+  const patch: BookmarkSettingsConfig = {
+    bookmarkLayoutMode: normalizeBookmarkLayoutMode(payload.bookmarkLayoutMode),
+    bookmarkColumns: normalizeBookmarkColumns(payload.bookmarkColumns),
+    faviconAutoRefreshEnabled:
+      typeof payload.faviconAutoRefreshEnabled === 'boolean'
+        ? payload.faviconAutoRefreshEnabled
+        : DEFAULT_HOMEPAGE_CONFIG.faviconAutoRefreshEnabled,
+    faviconAutoRefreshMinutes: normalizeFaviconRefreshMinutes(
+      payload.faviconAutoRefreshMinutes
+    ),
+    faviconLastRefreshAt: normalizeTimestampString(
+      payload.faviconLastRefreshAt,
+      DEFAULT_HOMEPAGE_CONFIG.faviconLastRefreshAt
+    ),
+    bookmarks,
+  };
+
+  return {
+    patch,
+    warnings,
+    totalBookmarks: total,
+    importedBookmarks: bookmarks.length,
+    skippedBookmarks: total - bookmarks.length,
+  };
 }
 
 function normalizeBackgroundConfig(value: unknown): BackgroundConfig {
