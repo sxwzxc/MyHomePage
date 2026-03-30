@@ -56,10 +56,10 @@ export async function onRequestOptions() {
 
 export async function onRequest(context) {
   const request = context?.request;
-  const requestId = `geo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const requestId = `geo_alias_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const requestInfo = pickRequestDebugInfo(request);
 
-  console.log('[get_geo] incoming request', {
+  console.log('[geo] incoming request', {
     requestId,
     ...requestInfo,
   });
@@ -70,7 +70,7 @@ export async function onRequest(context) {
     }
 
     if (request.method !== 'GET') {
-      console.error('[get_geo] method not allowed', {
+      console.error('[geo] method not allowed', {
         requestId,
         method: request.method,
       });
@@ -82,14 +82,14 @@ export async function onRequest(context) {
 
     if (!geo) {
       const eoKeys = eo && typeof eo === 'object' ? Object.keys(eo) : [];
-      console.error('[get_geo] geo unavailable: request.eo.geo is empty', {
+      console.error('[geo] geo unavailable: request.eo.geo is empty', {
         requestId,
         eoType: typeof eo,
         eoKeys,
         debug: requestInfo,
       });
     } else {
-      console.log('[get_geo] geo resolved', {
+      console.log('[geo] geo resolved', {
         requestId,
         geoKeys: Object.keys(geo),
         country: geo.country || geo.countryName || '',
@@ -108,7 +108,7 @@ export async function onRequest(context) {
       requestId,
     });
   } catch (error) {
-    console.error('[get_geo] unexpected error', {
+    console.error('[geo] unexpected error', {
       requestId,
       error: normalizeErrorLog(error),
       debug: requestInfo,

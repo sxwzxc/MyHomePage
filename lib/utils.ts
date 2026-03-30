@@ -73,7 +73,17 @@ export type GeoResponse = {
   geo: Record<string, unknown> | null;
   available: boolean;
   message?: string;
+  requestId?: string;
+  endpoint?: string;
 };
+
+function normalizeErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error);
+}
 
 function readConfigCache(): HomepageConfig | null {
   try {
@@ -117,17 +127,59 @@ export async function getVisitCount(): Promise<number> {
 }
 
 export async function getGeo(): Promise<GeoResponse> {
-  try {
-    return await requestJson<GeoResponse>('/get_geo', {
-      method: 'GET',
-    });
-  } catch {
-    return {
-      geo: null,
-      available: false,
-      message: '地理位置信息暂不可用',
-    };
+  const paths = ['/get_geo', '/geo'];
+  const errors: string[] = [];
+
+  for (const path of paths) {
+    try {
+      const data = await requestJson<GeoResponse>(path, {
+        method: 'GET',
+      });
+
+      const response: GeoResponse = {
+        ...data,
+        endpoint: path,
+      };
+
+      if (response.available && response.geo) {
+        console.info('[geo] request success', {
+          endpoint: path,
+          requestId: response.requestId || '',
+          keys: Object.keys(response.geo),
+        });
+      } else {
+        console.error('[geo] endpoint responded but no geo', {
+          endpoint: path,
+          requestId: response.requestId || '',
+          response,
+        });
+      }
+
+      return response;
+    } catch (error) {
+      const message = normalizeErrorMessage(error);
+      errors.push(`${path}: ${message}`);
+      console.error('[geo] request failed', {
+        endpoint: path,
+        error,
+        message,
+      });
+    }
   }
+
+  console.error('[geo] all endpoint attempts failed', {
+    host:
+      getFunctionsHost() ||
+      (typeof window !== 'undefined' ? window.location.origin : ''),
+    nodeEnv: process.env.NODE_ENV,
+    errors,
+  });
+
+  return {
+    geo: null,
+    available: false,
+    message: errors[0] || '地理位置信息暂不可用',
+  };
 }
 
 export async function getHomepageConfig(): Promise<HomepageConfig> {

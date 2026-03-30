@@ -334,14 +334,40 @@ export default function HomepageDashboard() {
 
     async function loadGeo() {
       setGeoLoading(true);
-      const result = await getGeo();
 
-      if (cancelled) {
-        return;
+      try {
+        const result = await getGeo();
+
+        if (cancelled) {
+          return;
+        }
+
+        if (result.available && result.geo) {
+          console.info('[geo] homepage geolocation loaded', {
+            endpoint: result.endpoint || '',
+            requestId: result.requestId || '',
+            geo: result.geo,
+          });
+          setGeoInfo(result.geo);
+        } else {
+          console.error('[geo] homepage geolocation unavailable', {
+            endpoint: result.endpoint || '',
+            requestId: result.requestId || '',
+            message: result.message || '',
+            response: result,
+          });
+          setGeoInfo(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('[geo] homepage geolocation unexpected error', error);
+          setGeoInfo(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setGeoLoading(false);
+        }
       }
-
-      setGeoInfo(result.available ? result.geo : null);
-      setGeoLoading(false);
     }
 
     void loadGeo();
