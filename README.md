@@ -23,6 +23,7 @@
 ### 主页信息
 - Canvas 模拟时钟，毫秒级平滑动画
 - 实时天气查询（城市可配置）
+- 自动获取访客地理位置（基于 EdgeOne `request.eo.geo`）
 - 页面访问计数
 
 ### 视觉定制
@@ -85,6 +86,7 @@ npm run lint   # ESLint 校验
 ├── functions/
 │   ├── homepage-config/        # 配置读写（KV 键: homepage:config:v1）
 │   ├── news/                   # 新闻聚合引擎（11 个来源 + 缓存）
+│   ├── get_geo/                # 地理位置获取（Edge `request.eo.geo`）
 │   ├── favicon-fetch/          # Favicon 获取代理
 │   ├── visit/                  # 访问计数器
 │   ├── password-verify/        # 密码验证
