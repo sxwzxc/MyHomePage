@@ -15,7 +15,6 @@ import {
 } from 'lucide-react';
 import { Bookmark, HomepageConfig, DEFAULT_HOMEPAGE_CONFIG } from '@/lib/homepage-config';
 import {
-  getGeo,
   getHomepageConfig,
   getVisitCount,
   saveHomepageConfig,
@@ -75,36 +74,6 @@ function weatherCodeToText(code: number): string {
   };
 
   return map[code] ?? '天气未知';
-}
-
-function readGeoField(geo: Record<string, unknown>, keys: string[]): string {
-  for (const key of keys) {
-    const value = geo[key];
-
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-
-    if (typeof value === 'number' && Number.isFinite(value)) {
-      return String(value);
-    }
-  }
-
-  return '';
-}
-
-function formatGeoSummary(geo: Record<string, unknown>): string {
-  const district = readGeoField(geo, ['district', 'districtName']);
-  const city = readGeoField(geo, ['city', 'cityName']);
-  const region = readGeoField(geo, ['region', 'regionName', 'province', 'provinceName', 'state']);
-  const country = readGeoField(geo, ['country', 'countryName']);
-  const parts = [district, city, region, country].filter(Boolean);
-
-  return parts.filter((part, index) => parts.indexOf(part) === index).join(' · ');
-}
-
-function formatGeoTimezone(geo: Record<string, unknown>): string {
-  return readGeoField(geo, ['timezone', 'timeZone']);
 }
 
 async function fetchWeatherByCity(city: string): Promise<WeatherInfo> {
@@ -193,8 +162,6 @@ export default function HomepageDashboard() {
   );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [visitCount, setVisitCount] = useState<number | null>(null);
-  const [geoInfo, setGeoInfo] = useState<Record<string, unknown> | null>(null);
-  const [geoLoading, setGeoLoading] = useState(true);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [now, setNow] = useState(() => getSecondAlignedNow());
@@ -238,14 +205,6 @@ export default function HomepageDashboard() {
       config.searchEngines[0]
     );
   }, [config.searchEngines, selectedEngineId]);
-  const geoSummary = useMemo(
-    () => (geoInfo ? formatGeoSummary(geoInfo) : ''),
-    [geoInfo]
-  );
-  const geoTimezone = useMemo(
-    () => (geoInfo ? formatGeoTimezone(geoInfo) : ''),
-    [geoInfo]
-  );
 
   const isCompactMode = config.bookmarkLayoutMode === 'compact';
   const totalBookmarkCards = config.bookmarks.length + 1;
@@ -323,28 +282,6 @@ export default function HomepageDashboard() {
     }
 
     void load();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadGeo() {
-      setGeoLoading(true);
-
-      const result = await getGeo();
-      if (cancelled) {
-        return;
-      }
-
-      setGeoInfo(result.available ? result.geo : null);
-      setGeoLoading(false);
-    }
-
-    void loadGeo();
 
     return () => {
       cancelled = true;
@@ -1011,13 +948,6 @@ export default function HomepageDashboard() {
                   : weatherError
                     ? `🌤 ${weatherError}`
                     : '🌤 天气加载中...'}
-              </span>
-              <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
-                {geoLoading
-                  ? '📍 位置识别中...'
-                  : geoSummary
-                    ? `📍 ${geoSummary}${geoTimezone ? `（${geoTimezone}）` : ''}`
-                    : '📍 位置不可用'}
               </span>
               <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
                 访问：{visitCount ?? '-'}

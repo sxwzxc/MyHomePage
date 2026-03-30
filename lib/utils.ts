@@ -69,13 +69,6 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 const CONFIG_CACHE_KEY = 'homepage_config_cache';
 const CONFIG_CACHE_TTL_MS = 30_000;
 
-export type GeoResponse = {
-  geo: Record<string, unknown> | null;
-  available: boolean;
-  source: string;
-  message?: string;
-};
-
 function readConfigCache(): HomepageConfig | null {
   try {
     if (typeof sessionStorage === 'undefined') return null;
@@ -115,21 +108,6 @@ export async function getVisitCount(): Promise<number> {
   });
 
   return Number(data.visitCount) || 0;
-}
-
-export async function getGeo(): Promise<GeoResponse> {
-  try {
-    return await requestJson<GeoResponse>('/geo', {
-      method: 'GET',
-    });
-  } catch {
-    return {
-      geo: null,
-      available: false,
-      source: 'fallback',
-      message: '地理位置信息暂不可用',
-    };
-  }
 }
 
 export async function getHomepageConfig(): Promise<HomepageConfig> {
