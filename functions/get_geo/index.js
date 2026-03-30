@@ -54,7 +54,7 @@ export async function onRequestOptions() {
   return jsonResponse({ ok: true });
 }
 
-export async function onRequest(context) {
+async function handleGetRequest(context) {
   const request = context?.request;
   const requestId = `geo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const requestInfo = pickRequestDebugInfo(request);
@@ -65,18 +65,6 @@ export async function onRequest(context) {
   });
 
   try {
-    if (request.method === 'OPTIONS') {
-      return onRequestOptions();
-    }
-
-    if (request.method !== 'GET') {
-      console.error('[get_geo] method not allowed', {
-        requestId,
-        method: request.method,
-      });
-      return jsonResponse({ error: 'Method not allowed' }, 405);
-    }
-
     const geo = resolveGeo(request);
     const eo = request?.eo;
 
@@ -124,4 +112,22 @@ export async function onRequest(context) {
       500
     );
   }
+}
+
+export async function onRequestGet(context) {
+  return handleGetRequest(context);
+}
+
+export async function onRequest(context) {
+  const method = context?.request?.method || 'UNKNOWN';
+
+  if (method === 'OPTIONS') {
+    return onRequestOptions();
+  }
+
+  if (method === 'GET') {
+    return onRequestGet(context);
+  }
+
+  return jsonResponse({ error: 'Method not allowed' }, 405);
 }
