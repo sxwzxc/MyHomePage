@@ -67,7 +67,7 @@ const DEFAULT_CONFIG = {
   background: {
     type: 'animated-gradient',
     imageBlur: 5,
-    imageOpacity: 80,
+    imageOverlay: 50,
     gradientPreset: 'default',
   },
   news: {
@@ -199,12 +199,22 @@ function normalizeBookmarks(value) {
 
 function normalizeBackgroundConfig(value) {
   if (!value || typeof value !== 'object') {
-    return DEFAULT_CONFIG.background;
+    return {
+      ...DEFAULT_CONFIG.background,
+      imageOpacity: DEFAULT_CONFIG.background.imageOverlay,
+    };
   }
 
   const type = ['animated-gradient', 'image', 'solid'].includes(String(value.type))
     ? value.type
     : 'animated-gradient';
+
+  const imageOverlay =
+    typeof value.imageOverlay === 'number'
+      ? Math.max(0, Math.min(100, value.imageOverlay))
+      : typeof value.imageOpacity === 'number'
+        ? Math.max(0, Math.min(100, value.imageOpacity))
+        : DEFAULT_CONFIG.background.imageOverlay;
 
   return {
     type,
@@ -213,10 +223,8 @@ function normalizeBackgroundConfig(value) {
       typeof value.imageBlur === 'number'
         ? Math.max(0, Math.min(10, value.imageBlur))
         : 5,
-    imageOpacity:
-      typeof value.imageOpacity === 'number'
-        ? Math.max(0, Math.min(100, value.imageOpacity))
-        : 80,
+    imageOverlay,
+    imageOpacity: imageOverlay,
     gradientPreset: asString(value.gradientPreset, 'default'),
     solidColor: asString(value.solidColor),
   };

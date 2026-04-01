@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  CSSProperties,
   ChangeEvent,
   FormEvent,
   KeyboardEvent,
@@ -119,6 +120,21 @@ function shouldCommitRangeOnKeyUp(event: KeyboardEvent<HTMLInputElement>): boole
     event.key === 'PageUp' ||
     event.key === 'PageDown'
   );
+}
+
+function getRangeProgressStyle(
+  value: number,
+  min: number,
+  max: number
+): CSSProperties {
+  const safeMin = Number.isFinite(min) ? min : 0;
+  const safeMax = Number.isFinite(max) && max > safeMin ? max : safeMin + 1;
+  const safeValue = Math.max(safeMin, Math.min(safeMax, value));
+  const percent = ((safeValue - safeMin) / (safeMax - safeMin)) * 100;
+
+  return {
+    '--slider-progress': `${percent}%`,
+  } as CSSProperties;
 }
 
 export default function SettingsDashboard() {
@@ -1173,6 +1189,7 @@ export default function SettingsDashboard() {
                 value={bookmarkColumnsInput}
                 onChange={(event) => setBookmarkColumnsInput(Number(event.target.value))}
                 className="slider-thumb"
+                style={getRangeProgressStyle(bookmarkColumnsInput, 1, 6)}
               />
             </div>
 
@@ -1189,6 +1206,7 @@ export default function SettingsDashboard() {
                   setFaviconAutoRefreshMinutesInput(Number(event.target.value))
                 }
                 className="slider-thumb"
+                style={getRangeProgressStyle(faviconAutoRefreshMinutesInput, 1, 1440)}
               />
             </div>
           </div>
@@ -1342,6 +1360,7 @@ export default function SettingsDashboard() {
                     }
                   }}
                   className="slider-thumb"
+                  style={getRangeProgressStyle(backgroundImageBlurInput, 0, 10)}
                 />
               </div>
 
@@ -1365,6 +1384,7 @@ export default function SettingsDashboard() {
                     }
                   }}
                   className="slider-thumb"
+                  style={getRangeProgressStyle(backgroundImageOverlayInput, 0, 100)}
                 />
               </div>
 
@@ -1483,6 +1503,7 @@ export default function SettingsDashboard() {
                     }
                   }}
                   className="slider-thumb"
+                  style={getRangeProgressStyle(newsAutoSwitchSecondsInput, 5, 120)}
                 />
               </div>
 
@@ -1506,6 +1527,7 @@ export default function SettingsDashboard() {
                     }
                   }}
                   className="slider-thumb"
+                  style={getRangeProgressStyle(newsLimitInput, 5, 30)}
                 />
               </div>
             </div>
