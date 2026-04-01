@@ -29,8 +29,6 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const host = getFunctionsHost();
   const method = init?.method ?? 'GET';
   const hasBody = typeof init?.body !== 'undefined';
-  const isFormDataBody =
-    typeof FormData !== 'undefined' && init?.body instanceof FormData;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -41,7 +39,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       signal: controller.signal,
       headers: {
         ...(init?.headers ?? {}),
-        ...(!isFormDataBody && (hasBody || method !== 'GET')
+        ...(hasBody || method !== 'GET'
           ? { 'content-type': 'application/json' }
           : {}),
       },
@@ -292,23 +290,14 @@ export async function saveHomepageConfig(
 }
 
 export async function uploadBackgroundImage(
-  imageData: string | File,
+  imageDataUrl: string,
   fileName: string
 ): Promise<BackgroundImageUploadResponse> {
-  const body: BodyInit =
-    typeof imageData === 'string'
-      ? JSON.stringify({ imageDataUrl: imageData, fileName })
-      : (() => {
-          const formData = new FormData();
-          formData.append('file', imageData, fileName || imageData.name || 'background-image');
-          formData.append('fileName', fileName || imageData.name || 'background-image');
-          return formData;
-        })();
-
   const data = await requestJson<BackgroundImageUploadResponse>('/background-image', {
     method: 'POST',
-    body,
+    body: JSON.stringify({ imageDataUrl, fileName }),
   });
+
   if (!data || typeof data.imageUrl !== 'string' || !data.imageUrl.trim()) {
     throw new Error('背景图片上传成功，但返回数据缺少 imageUrl');
   }

@@ -848,9 +848,9 @@ export default function SettingsDashboard() {
       return;
     }
 
-    if (file.size > 20 * 1024 * 1024) {
+    if (file.size > 4 * 1024 * 1024) {
       setBackgroundUploadStatus('error');
-      setBackgroundUploadHint('图片过大，当前限制 20MB');
+      setBackgroundUploadHint('图片过大，当前限制 4MB');
       return;
     }
 
@@ -858,7 +858,22 @@ export default function SettingsDashboard() {
     setBackgroundUploadHint(`正在上传：${file.name}`);
 
     try {
-      const uploaded = await uploadBackgroundImage(file, file.name);
+      const imageDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          if (typeof result === 'string') {
+            resolve(result);
+            return;
+          }
+
+          reject(new Error('读取图片失败'));
+        };
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.readAsDataURL(file);
+      });
+
+      const uploaded = await uploadBackgroundImage(imageDataUrl, file.name);
 
       updateConfig((prev) => ({
         ...prev,
