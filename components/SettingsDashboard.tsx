@@ -41,6 +41,14 @@ type SearchEngineFormState = {
   template: string;
 };
 
+type SettingsTabId = 'general' | 'news' | 'resources';
+
+const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string; description: string }> = [
+  { id: 'general', label: '基础设置', description: '页面文案、天气、访问统计、外观' },
+  { id: 'news', label: '新闻设置', description: '热点新闻来源、排序与同步' },
+  { id: 'resources', label: '搜索与书签', description: '搜索引擎与书签管理' },
+];
+
 function createId(prefix: string): string {
   const random = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now()}_${random}`;
@@ -101,6 +109,7 @@ export default function SettingsDashboard() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('general');
 
   const [pageTitleInput, setPageTitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.pageTitle);
   const [pageSubtitleInput, setPageSubtitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.pageSubtitle);
@@ -755,14 +764,42 @@ export default function SettingsDashboard() {
           ) : null}
         </header>
 
-        <section className="space-y-3">
+        <div className="overflow-x-auto rounded-2xl border border-white/15 bg-slate-900/50 p-2 shadow-lg backdrop-blur-md">
+          <div className="flex min-w-max items-center gap-2">
+            {SETTINGS_TABS.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`rounded-xl px-4 py-2 text-sm transition ${
+                  activeTab === tab.id
+                    ? 'bg-cyan-500 text-slate-900 shadow'
+                    : 'bg-slate-950/60 text-white/85 hover:bg-slate-900/80'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 px-2 text-xs text-slate-300">
+            {SETTINGS_TABS.find((item) => item.id === activeTab)?.description}
+          </p>
+        </div>
+
+        <section className={activeTab === 'resources' ? 'hidden' : 'space-y-3'}>
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold tracking-wide text-cyan-200">基础配置</h2>
-            <p className="text-xs text-slate-300">页面文案、天气、访问统计与外观设置</p>
+            <h2 className="text-sm font-semibold tracking-wide text-cyan-200">
+              {activeTab === 'news' ? '新闻配置' : '基础配置'}
+            </h2>
+            <p className="text-xs text-slate-300">
+              {activeTab === 'news'
+                ? '热点新闻来源、排序与刷新策略'
+                : '页面文案、天气、访问统计与外观设置'}
+            </p>
           </div>
 
-          <div className="grid items-start gap-6 xl:grid-cols-2">
-        <article className={cardClassName}>
+          <div className="space-y-6">
+        <article className={`${cardClassName} ${activeTab === 'general' ? '' : 'hidden'}`}>
           <h2 className="text-shadow-title text-base font-semibold text-white">页面文案</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input
@@ -792,7 +829,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className={cardClassName}>
+        <article className={`${cardClassName} ${activeTab === 'general' ? '' : 'hidden'}`}>
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <CloudSun className="h-4 w-4 text-cyan-300" />
             天气
@@ -835,7 +872,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className={cardClassName}>
+        <article className={`${cardClassName} ${activeTab === 'general' ? '' : 'hidden'}`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
@@ -930,7 +967,7 @@ export default function SettingsDashboard() {
           </p>
         </article>
 
-        <article className={cardClassName}>
+        <article className={`${cardClassName} ${activeTab === 'general' ? '' : 'hidden'}`}>
           <h2 className="text-shadow-title text-base font-semibold text-white">书签布局</h2>
 
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -996,7 +1033,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className={cardClassName}>
+        <article className={`${cardClassName} ${activeTab === 'general' ? '' : 'hidden'}`}>
           <h2 className="text-shadow-title text-base font-semibold text-white">背景设置</h2>
 
           <div className="mt-3">
@@ -1136,7 +1173,7 @@ export default function SettingsDashboard() {
           )}
         </article>
 
-        <article className={`${cardClassName} xl:col-span-2`}>
+        <article className={`${cardClassName} ${activeTab === 'news' ? '' : 'hidden'}`}>
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <Newspaper className="h-4 w-4 text-cyan-300" />
             热点新闻
@@ -1437,13 +1474,13 @@ export default function SettingsDashboard() {
           </div>
         </section>
 
-        <section className="space-y-3">
+        <section className={activeTab === 'resources' ? 'space-y-3' : 'hidden'}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-semibold tracking-wide text-cyan-200">搜索与书签</h2>
             <p className="text-xs text-slate-300">搜索引擎与书签功能管理</p>
           </div>
 
-          <div className="grid items-start gap-6 xl:grid-cols-2">
+          <div className="space-y-6">
 
         <article className={cardClassName}>
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
@@ -1526,7 +1563,7 @@ export default function SettingsDashboard() {
           </ul>
         </article>
 
-        <article className={`${cardClassName} xl:col-span-2`}>
+        <article className={cardClassName}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">

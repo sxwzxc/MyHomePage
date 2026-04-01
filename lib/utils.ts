@@ -45,7 +45,18 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       },
     });
 
-    const data = await res.json();
+    const rawText = await res.text();
+    let data: unknown = null;
+
+    if (rawText.trim()) {
+      try {
+        data = JSON.parse(rawText);
+      } catch {
+        throw new Error(
+          `服务返回了非 JSON 内容（${res.status}），请确认函数接口已正确部署。`
+        );
+      }
+    }
 
     if (!res.ok || (data && typeof data === 'object' && 'error' in data)) {
       const message =
@@ -151,17 +162,31 @@ export async function getVisitCount(): Promise<number> {
 }
 
 export async function getVisitStats(): Promise<VisitStatsResponse> {
-  const data = await requestJson<VisitStatsResponse>('/visit?stats=1', {
-    method: 'GET',
-  });
+  const paths = ['/visit?stats=1', '/visit-stats'];
+  const errors: string[] = [];
 
-  return {
-    windowDays: Number(data.windowDays) || 30,
-    totalVisits: Number(data.totalVisits) || 0,
-    uniqueIps: Number(data.uniqueIps) || 0,
-    records: Array.isArray(data.records) ? data.records : [],
-    updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString(),
-  };
+  for (const path of paths) {
+    try {
+      const data = await requestJson<VisitStatsResponse>(path, {
+        method: 'GET',
+      });
+
+      return {
+        windowDays: Number(data.windowDays) || 30,
+        totalVisits: Number(data.totalVisits) || 0,
+        uniqueIps: Number(data.uniqueIps) || 0,
+        records: Array.isArray(data.records) ? data.records : [],
+        updatedAt:
+          typeof data.updatedAt === 'string'
+            ? data.updatedAt
+            : new Date().toISOString(),
+      };
+    } catch (error) {
+      errors.push(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  throw new Error(errors[0] || '访问统计服务暂不可用');
 }
 
 export async function getGeo(): Promise<GeoResponse> {
