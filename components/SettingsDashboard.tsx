@@ -2,7 +2,16 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ChangeEvent,
+  FormEvent,
+  KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { ArrowDown, ArrowUp, BarChart3, CloudSun, Download, Loader2, Newspaper, PenLine, RefreshCcw, Search, Sparkles, Trash2, Upload } from 'lucide-react';
 import {
   Bookmark,
@@ -102,6 +111,16 @@ function formatDateTime(value: string): string {
   });
 }
 
+function shouldCommitRangeOnKeyUp(event: KeyboardEvent<HTMLInputElement>): boolean {
+  return (
+    event.key.startsWith('Arrow') ||
+    event.key === 'Home' ||
+    event.key === 'End' ||
+    event.key === 'PageUp' ||
+    event.key === 'PageDown'
+  );
+}
+
 export default function SettingsDashboard() {
   const router = useRouter();
   const [accessChecked, setAccessChecked] = useState(false);
@@ -128,6 +147,16 @@ export default function SettingsDashboard() {
     useState(DEFAULT_HOMEPAGE_CONFIG.faviconAutoRefreshEnabled);
   const [faviconAutoRefreshMinutesInput, setFaviconAutoRefreshMinutesInput] = useState(
     DEFAULT_HOMEPAGE_CONFIG.faviconAutoRefreshMinutes
+  );
+  const [newsAutoSwitchSecondsInput, setNewsAutoSwitchSecondsInput] = useState(
+    DEFAULT_HOMEPAGE_CONFIG.news.autoSwitchSeconds
+  );
+  const [newsLimitInput, setNewsLimitInput] = useState(DEFAULT_HOMEPAGE_CONFIG.news.limit);
+  const [backgroundImageBlurInput, setBackgroundImageBlurInput] = useState(
+    DEFAULT_HOMEPAGE_CONFIG.background.imageBlur ?? 0
+  );
+  const [backgroundImageOverlayInput, setBackgroundImageOverlayInput] = useState(
+    DEFAULT_HOMEPAGE_CONFIG.background.imageOverlay ?? 50
   );
 
   const [bookmarkForm, setBookmarkForm] = useState<BookmarkFormState>({
@@ -243,6 +272,10 @@ export default function SettingsDashboard() {
         setBookmarkColumnsInput(result.bookmarkColumns);
         setFaviconAutoRefreshEnabledInput(result.faviconAutoRefreshEnabled);
         setFaviconAutoRefreshMinutesInput(result.faviconAutoRefreshMinutes);
+        setNewsAutoSwitchSecondsInput(result.news.autoSwitchSeconds);
+        setNewsLimitInput(result.news.limit);
+        setBackgroundImageBlurInput(result.background.imageBlur ?? 0);
+        setBackgroundImageOverlayInput(result.background.imageOverlay ?? 50);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '配置加载失败');
@@ -278,6 +311,16 @@ export default function SettingsDashboard() {
 
     void loadVisitStats();
   }, [accessAllowed, loadVisitStats]);
+
+  useEffect(() => {
+    setNewsAutoSwitchSecondsInput(config.news.autoSwitchSeconds);
+    setNewsLimitInput(config.news.limit);
+  }, [config.news.autoSwitchSeconds, config.news.limit]);
+
+  useEffect(() => {
+    setBackgroundImageBlurInput(config.background.imageBlur ?? 0);
+    setBackgroundImageOverlayInput(config.background.imageOverlay ?? 50);
+  }, [config.background.imageBlur, config.background.imageOverlay]);
 
   useEffect(() => {
     return () => {
@@ -359,6 +402,70 @@ export default function SettingsDashboard() {
       ),
     }));
   };
+
+  const commitNewsAutoSwitchSeconds = useCallback(() => {
+    const nextSeconds = Math.max(5, Math.min(120, Math.round(newsAutoSwitchSecondsInput)));
+
+    if (nextSeconds === config.news.autoSwitchSeconds) {
+      return;
+    }
+
+    updateConfig((prev) => ({
+      ...prev,
+      news: {
+        ...prev.news,
+        autoSwitchSeconds: nextSeconds,
+      },
+    }));
+  }, [config.news.autoSwitchSeconds, newsAutoSwitchSecondsInput, updateConfig]);
+
+  const commitNewsLimit = useCallback(() => {
+    const nextLimit = Math.max(5, Math.min(30, Math.round(newsLimitInput)));
+
+    if (nextLimit === config.news.limit) {
+      return;
+    }
+
+    updateConfig((prev) => ({
+      ...prev,
+      news: {
+        ...prev.news,
+        limit: nextLimit,
+      },
+    }));
+  }, [config.news.limit, newsLimitInput, updateConfig]);
+
+  const commitBackgroundImageBlur = useCallback(() => {
+    const nextBlur = Math.max(0, Math.min(10, Number(backgroundImageBlurInput)));
+
+    if (nextBlur === (config.background.imageBlur ?? 0)) {
+      return;
+    }
+
+    updateConfig((prev) => ({
+      ...prev,
+      background: {
+        ...prev.background,
+        imageBlur: nextBlur,
+      },
+    }));
+  }, [backgroundImageBlurInput, config.background.imageBlur, updateConfig]);
+
+  const commitBackgroundImageOverlay = useCallback(() => {
+    const nextOverlay = Math.max(0, Math.min(100, Math.round(backgroundImageOverlayInput)));
+
+    if (nextOverlay === (config.background.imageOverlay ?? 50)) {
+      return;
+    }
+
+    updateConfig((prev) => ({
+      ...prev,
+      background: {
+        ...prev.background,
+        imageOverlay: nextOverlay,
+      },
+    }));
+  }, [backgroundImageOverlayInput, config.background.imageOverlay, updateConfig]);
 
   const handleBookmarkSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -1217,22 +1324,22 @@ export default function SettingsDashboard() {
 
               <div>
                 <label className="mb-1 block text-xs text-slate-300">
-                  模糊程度: {config.background.imageBlur || 0}
+                  模糊程度: {backgroundImageBlurInput}
                 </label>
                 <input
                   type="range"
                   min="0"
                   max="10"
                   step="0.5"
-                  value={config.background.imageBlur || 0}
+                  value={backgroundImageBlurInput}
                   onChange={(e) => {
-                    updateConfig((prev) => ({
-                      ...prev,
-                      background: {
-                        ...prev.background,
-                        imageBlur: Number(e.target.value),
-                      },
-                    }));
+                    setBackgroundImageBlurInput(Number(e.target.value));
+                  }}
+                  onPointerUp={commitBackgroundImageBlur}
+                  onKeyUp={(event) => {
+                    if (shouldCommitRangeOnKeyUp(event)) {
+                      commitBackgroundImageBlur();
+                    }
                   }}
                   className="slider-thumb"
                 />
@@ -1240,26 +1347,28 @@ export default function SettingsDashboard() {
 
               <div>
                 <label className="mb-1 block text-xs text-slate-300">
-                  遮罩浓度: {config.background.imageOverlay ?? 50}%
+                  遮罩浓度: {backgroundImageOverlayInput}%
                 </label>
                 <input
                   type="range"
                   min="0"
                   max="100"
                   step="1"
-                  value={config.background.imageOverlay ?? 50}
+                  value={backgroundImageOverlayInput}
                   onChange={(e) => {
-                    updateConfig((prev) => ({
-                      ...prev,
-                      background: {
-                        ...prev.background,
-                        imageOverlay: Number(e.target.value),
-                      },
-                    }));
+                    setBackgroundImageOverlayInput(Number(e.target.value));
+                  }}
+                  onPointerUp={commitBackgroundImageOverlay}
+                  onKeyUp={(event) => {
+                    if (shouldCommitRangeOnKeyUp(event)) {
+                      commitBackgroundImageOverlay();
+                    }
                   }}
                   className="slider-thumb"
                 />
               </div>
+
+              <p className="text-xs text-slate-400">滑杆拖动结束后会自动保存，避免数值回跳。</p>
             </div>
           )}
 
@@ -1356,25 +1465,22 @@ export default function SettingsDashboard() {
 
               <div>
                 <label className="mb-1 block text-xs text-slate-300">
-                  自动切换间隔（秒）: {config.news.autoSwitchSeconds}
+                  自动切换间隔（秒）: {newsAutoSwitchSecondsInput}
                 </label>
                 <input
                   type="range"
                   min="5"
                   max="120"
-                  value={config.news.autoSwitchSeconds}
+                  value={newsAutoSwitchSecondsInput}
                   onChange={(event) => {
-                    const nextSeconds = Math.max(
-                      5,
-                      Math.min(120, Number(event.target.value))
-                    );
-                    updateConfig((prev) => ({
-                      ...prev,
-                      news: {
-                        ...prev.news,
-                        autoSwitchSeconds: nextSeconds,
-                      },
-                    }));
+                    const nextSeconds = Math.max(5, Math.min(120, Number(event.target.value)));
+                    setNewsAutoSwitchSecondsInput(nextSeconds);
+                  }}
+                  onPointerUp={commitNewsAutoSwitchSeconds}
+                  onKeyUp={(event) => {
+                    if (shouldCommitRangeOnKeyUp(event)) {
+                      commitNewsAutoSwitchSeconds();
+                    }
                   }}
                   className="slider-thumb"
                 />
@@ -1382,30 +1488,29 @@ export default function SettingsDashboard() {
 
               <div>
                 <label className="mb-1 block text-xs text-slate-300">
-                  展示条数: {config.news.limit}
+                  展示条数: {newsLimitInput}
                 </label>
                 <input
                   type="range"
                   min="5"
                   max="30"
-                  value={config.news.limit}
+                  value={newsLimitInput}
                   onChange={(event) => {
-                    const nextLimit = Math.max(
-                      5,
-                      Math.min(30, Number(event.target.value))
-                    );
-                    updateConfig((prev) => ({
-                      ...prev,
-                      news: {
-                        ...prev.news,
-                        limit: nextLimit,
-                      },
-                    }));
+                    const nextLimit = Math.max(5, Math.min(30, Number(event.target.value)));
+                    setNewsLimitInput(nextLimit);
+                  }}
+                  onPointerUp={commitNewsLimit}
+                  onKeyUp={(event) => {
+                    if (shouldCommitRangeOnKeyUp(event)) {
+                      commitNewsLimit();
+                    }
                   }}
                   className="slider-thumb"
                 />
               </div>
             </div>
+
+            <p className="mt-2 text-xs text-slate-400">滑杆拖动结束后自动保存，拖动过程只更新本地显示。</p>
 
             <div className="mt-3">
               <label className="mb-2 block text-xs text-slate-300">显示来源（默认全选）</label>
