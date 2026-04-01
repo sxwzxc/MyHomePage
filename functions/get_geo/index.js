@@ -19,6 +19,26 @@ function resolveGeo(request) {
   return null;
 }
 
+function resolveClientIp(request) {
+  const eoClientIp = request?.eo?.clientIp;
+  if (typeof eoClientIp === 'string' && eoClientIp.trim()) {
+    return eoClientIp.trim();
+  }
+
+  const headers = request?.headers;
+  const xForwardedFor = headers?.get?.('x-forwarded-for') || '';
+  if (xForwardedFor.trim()) {
+    return xForwardedFor.split(',')[0].trim();
+  }
+
+  return (
+    headers?.get?.('x-real-ip') ||
+    headers?.get?.('cf-connecting-ip') ||
+    headers?.get?.('x-edgeone-client-ip') ||
+    ''
+  ).trim();
+}
+
 function pickRequestDebugInfo(request) {
   const headers = request && request.headers ? request.headers : null;
 
@@ -58,9 +78,11 @@ async function handleGetRequest(context) {
   const request = context?.request;
   const requestId = `geo_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const requestInfo = pickRequestDebugInfo(request);
+  const ip = resolveClientIp(request);
 
   console.log('[get_geo] incoming request', {
     requestId,
+    clientIp: ip,
     ...requestInfo,
   });
 
@@ -72,6 +94,7 @@ async function handleGetRequest(context) {
       const eoKeys = eo && typeof eo === 'object' ? Object.keys(eo) : [];
       console.error('[get_geo] geo unavailable: request.eo.geo is empty', {
         requestId,
+        clientIp: ip,
         eoType: typeof eo,
         eoKeys,
         debug: requestInfo,
@@ -79,6 +102,7 @@ async function handleGetRequest(context) {
     } else {
       console.log('[get_geo] geo resolved', {
         requestId,
+        clientIp: ip,
         geoKeys: Object.keys(geo),
         country: geo.country || geo.countryName || '',
         region: geo.region || geo.regionName || geo.province || '',
@@ -89,6 +113,7 @@ async function handleGetRequest(context) {
 
     return jsonResponse({
       geo,
+      ip,
       available: Boolean(geo),
       message: geo
         ? ''
@@ -105,6 +130,7 @@ async function handleGetRequest(context) {
     return jsonResponse(
       {
         geo: null,
+        ip,
         available: false,
         error: error instanceof Error ? error.message : 'Unknown error',
         requestId,

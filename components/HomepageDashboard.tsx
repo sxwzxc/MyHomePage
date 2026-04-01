@@ -194,6 +194,7 @@ export default function HomepageDashboard() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [visitCount, setVisitCount] = useState<number | null>(null);
   const [geoInfo, setGeoInfo] = useState<Record<string, unknown> | null>(null);
+  const [geoIp, setGeoIp] = useState('');
   const [geoLoading, setGeoLoading] = useState(true);
   const [weather, setWeather] = useState<WeatherInfo | null>(null);
   const [weatherError, setWeatherError] = useState<string | null>(null);
@@ -342,10 +343,13 @@ export default function HomepageDashboard() {
           return;
         }
 
+        setGeoIp(result.ip?.trim() || '');
+
         if (result.available && result.geo) {
           console.info('[geo] homepage geolocation loaded', {
             endpoint: result.endpoint || '',
             requestId: result.requestId || '',
+            ip: result.ip || '',
             geo: result.geo,
           });
           setGeoInfo(result.geo);
@@ -353,6 +357,7 @@ export default function HomepageDashboard() {
           console.error('[geo] homepage geolocation unavailable', {
             endpoint: result.endpoint || '',
             requestId: result.requestId || '',
+            ip: result.ip || '',
             message: result.message || '',
             response: result,
           });
@@ -362,6 +367,7 @@ export default function HomepageDashboard() {
         if (!cancelled) {
           console.error('[geo] homepage geolocation unexpected error', error);
           setGeoInfo(null);
+          setGeoIp('');
         }
       } finally {
         if (!cancelled) {
@@ -1038,13 +1044,18 @@ export default function HomepageDashboard() {
                     ? `🌤 ${weatherError}`
                     : '🌤 天气加载中...'}
               </span>
-              <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
-                {geoLoading
-                  ? '📍 位置识别中...'
-                  : geoSummary
-                    ? `📍 ${geoSummary}${geoTimezone ? `（${geoTimezone}）` : ''}`
-                    : '📍 位置不可用'}
-              </span>
+              <div className="text-shadow-soft rounded-xl border border-white/20 bg-slate-950/60 px-3 py-1.5">
+                <p className="leading-tight">
+                  {geoLoading ? '🌐 IP 获取中...' : geoIp ? `🌐 ${geoIp}` : '🌐 IP 不可用'}
+                </p>
+                <p className="mt-0.5 leading-tight">
+                  {geoLoading
+                    ? '📍 位置识别中...'
+                    : geoSummary
+                      ? `📍 ${geoSummary}${geoTimezone ? `（${geoTimezone}）` : ''}`
+                      : '📍 位置不可用'}
+                </p>
+              </div>
               <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
                 访问：{visitCount ?? '-'}
               </span>

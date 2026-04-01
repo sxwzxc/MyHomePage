@@ -71,6 +71,7 @@ const CONFIG_CACHE_TTL_MS = 30_000;
 
 export type GeoResponse = {
   geo: Record<string, unknown> | null;
+  ip?: string;
   available: boolean;
   message?: string;
   requestId?: string;
@@ -138,6 +139,7 @@ export async function getGeo(): Promise<GeoResponse> {
 
       const response: GeoResponse = {
         ...data,
+        ip: typeof data.ip === 'string' ? data.ip.trim() : '',
         endpoint: path,
       };
 
@@ -145,12 +147,14 @@ export async function getGeo(): Promise<GeoResponse> {
         console.info('[geo] request success', {
           endpoint: path,
           requestId: response.requestId || '',
+          ip: response.ip || '',
           keys: Object.keys(response.geo),
         });
       } else {
         console.error('[geo] endpoint responded but no geo', {
           endpoint: path,
           requestId: response.requestId || '',
+          ip: response.ip || '',
           response,
         });
       }
@@ -177,6 +181,7 @@ export async function getGeo(): Promise<GeoResponse> {
 
   return {
     geo: null,
+    ip: '',
     available: false,
     message: errors[0] || '地理位置信息暂不可用',
   };
