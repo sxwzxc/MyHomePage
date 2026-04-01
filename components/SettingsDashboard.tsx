@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ChangeEvent, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, CloudSun, Download, Loader2, Newspaper, PenLine, RefreshCcw, Search, Sparkles, Trash2, Upload } from 'lucide-react';
+import { ArrowDown, ArrowUp, BarChart3, CloudSun, Download, Loader2, Newspaper, PenLine, RefreshCcw, Search, Sparkles, Trash2, Upload } from 'lucide-react';
 import {
   Bookmark,
   createBookmarkSettingsBackupPayload,
@@ -21,7 +21,9 @@ import {
   fetchBookmarkFavicon,
   forceSyncNewsSources,
   getHomepageConfig,
+  getVisitStats,
   saveHomepageConfig,
+  type VisitStatsResponse,
 } from '@/lib/utils';
 import { isSettingsUnlocked } from '@/lib/unlock-state';
 
@@ -72,6 +74,23 @@ function BookmarkIconPreview({ bookmark }: { bookmark: Bookmark }) {
     // eslint-disable-next-line @next/next/no-img-element
     <img src={icon} alt={`${bookmark.title} icon`} className="h-10 w-10 rounded-lg" />
   );
+}
+
+function formatDateTime(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return '-';
+  }
+
+  return new Date(timestamp).toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }
 
 export default function SettingsDashboard() {
@@ -130,6 +149,11 @@ export default function SettingsDashboard() {
     'idle'
   );
   const [newsSyncHint, setNewsSyncHint] = useState<string | null>(null);
+  const [visitStats, setVisitStats] = useState<VisitStatsResponse | null>(null);
+  const [visitStatsStatus, setVisitStatsStatus] = useState<
+    'idle' | 'loading' | 'ready' | 'error'
+  >('idle');
+  const [visitStatsError, setVisitStatsError] = useState<string | null>(null);
   const saveHintTimer = useRef<number | null>(null);
   const bookmarkImportInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -163,6 +187,8 @@ export default function SettingsDashboard() {
       ),
     [orderedNewsSourceOptions, config.news.enabledSourceIds]
   );
+  const cardClassName =
+    'h-full rounded-2xl border border-white/15 bg-slate-900/55 p-5 shadow-lg backdrop-blur-md transition duration-200 hover:-translate-y-0.5 hover:border-cyan-300/35';
 
   useEffect(() => {
     if (isSettingsUnlocked()) {
@@ -215,6 +241,28 @@ export default function SettingsDashboard() {
       cancelled = true;
     };
   }, [accessAllowed]);
+
+  const loadVisitStats = useCallback(async () => {
+    setVisitStatsStatus('loading');
+    setVisitStatsError(null);
+
+    try {
+      const stats = await getVisitStats();
+      setVisitStats(stats);
+      setVisitStatsStatus('ready');
+    } catch (error) {
+      setVisitStatsStatus('error');
+      setVisitStatsError(error instanceof Error ? error.message : '访问统计加载失败');
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!accessAllowed) {
+      return;
+    }
+
+    void loadVisitStats();
+  }, [accessAllowed, loadVisitStats]);
 
   useEffect(() => {
     return () => {
@@ -707,8 +755,14 @@ export default function SettingsDashboard() {
           ) : null}
         </header>
 
-        <div className="grid gap-6 xl:grid-cols-2">
-        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold tracking-wide text-cyan-200">基础配置</h2>
+            <p className="text-xs text-slate-300">页面文案、天气、访问统计与外观设置</p>
+          </div>
+
+          <div className="grid items-start gap-6 xl:grid-cols-2">
+        <article className={cardClassName}>
           <h2 className="text-shadow-title text-base font-semibold text-white">页面文案</h2>
           <div className="mt-3 grid gap-3 md:grid-cols-3">
             <input
@@ -738,7 +792,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+        <article className={cardClassName}>
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <CloudSun className="h-4 w-4 text-cyan-300" />
             天气
@@ -781,7 +835,102 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+        <article className={cardClassName}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
+                <BarChart3 className="h-4 w-4 text-cyan-300" />
+                访问统计（近 30 天）
+              </h2>
+              <p className="mt-1 text-xs text-slate-300">
+                仅在设置页展示，记录 IP、地理位置和访问次数。
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                void loadVisitStats();
+              }}
+              disabled={visitStatsStatus === 'loading'}
+              className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {visitStatsStatus === 'loading' ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              刷新统计
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-full bg-white/10 px-3 py-1 text-slate-200">
+              30 天总访问：{visitStats?.totalVisits ?? '-'}
+            </span>
+            <span className="rounded-full bg-cyan-500/20 px-3 py-1 text-cyan-100">
+              去重 IP：{visitStats?.uniqueIps ?? '-'}
+            </span>
+            <span className="rounded-full bg-fuchsia-500/20 px-3 py-1 text-fuchsia-100">
+              记录条目：{visitStats?.records.length ?? '-'}
+            </span>
+          </div>
+
+          {visitStatsStatus === 'loading' ? (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-lg bg-cyan-500/20 px-3 py-2 text-sm text-cyan-100">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              正在加载访问统计...
+            </p>
+          ) : null}
+
+          {visitStatsError ? (
+            <p className="mt-3 rounded-lg bg-amber-500/20 px-3 py-2 text-sm text-amber-100">
+              访问统计加载失败：{visitStatsError}
+            </p>
+          ) : null}
+
+          <div className="mt-3 overflow-hidden rounded-xl border border-white/15 bg-slate-950/45">
+            <div className="max-h-80 overflow-auto">
+              <table className="min-w-full text-left text-xs text-slate-200">
+                <thead className="sticky top-0 bg-slate-900/95 text-slate-300">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">IP</th>
+                    <th className="px-3 py-2 font-medium">地理位置</th>
+                    <th className="px-3 py-2 font-medium">次数</th>
+                    <th className="px-3 py-2 font-medium">最近访问</th>
+                    <th className="px-3 py-2 font-medium">首次访问</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visitStats?.records?.length ? (
+                    visitStats.records.map((item, index) => (
+                      <tr key={`${item.ip}_${item.location}_${index}`} className="border-t border-white/10">
+                        <td className="px-3 py-2 font-mono text-[11px] text-cyan-100">{item.ip}</td>
+                        <td className="px-3 py-2">{item.location || '未知位置'}</td>
+                        <td className="px-3 py-2">{item.count}</td>
+                        <td className="px-3 py-2">{formatDateTime(item.lastVisitedAt)}</td>
+                        <td className="px-3 py-2">{formatDateTime(item.firstVisitedAt)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td className="px-3 py-8 text-center text-slate-400" colSpan={5}>
+                        暂无近 30 天访问记录
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <p className="mt-2 text-xs text-slate-400">
+            统计窗口：最近 {visitStats?.windowDays ?? 30} 天；更新时间：
+            {visitStats?.updatedAt ? formatDateTime(visitStats.updatedAt) : '-'}
+          </p>
+        </article>
+
+        <article className={cardClassName}>
           <h2 className="text-shadow-title text-base font-semibold text-white">书签布局</h2>
 
           <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -847,7 +996,7 @@ export default function SettingsDashboard() {
           </button>
         </article>
 
-        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+        <article className={cardClassName}>
           <h2 className="text-shadow-title text-base font-semibold text-white">背景设置</h2>
 
           <div className="mt-3">
@@ -987,7 +1136,7 @@ export default function SettingsDashboard() {
           )}
         </article>
 
-        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+        <article className={`${cardClassName} xl:col-span-2`}>
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <Newspaper className="h-4 w-4 text-cyan-300" />
             热点新闻
@@ -1285,12 +1434,18 @@ export default function SettingsDashboard() {
             </p>
           </div>
         </article>
+          </div>
+        </section>
 
-        </div>
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold tracking-wide text-cyan-200">搜索与书签</h2>
+            <p className="text-xs text-slate-300">搜索引擎与书签功能管理</p>
+          </div>
 
-        <div className="grid gap-6 2xl:grid-cols-[0.95fr,1.05fr]">
+          <div className="grid items-start gap-6 xl:grid-cols-2">
 
-        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+        <article className={cardClassName}>
           <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
             <Search className="h-4 w-4 text-cyan-300" />
             搜索引擎
@@ -1371,7 +1526,7 @@ export default function SettingsDashboard() {
           </ul>
         </article>
 
-        <article className="h-full rounded-2xl border border-white/15 bg-slate-900/50 p-5 shadow-lg backdrop-blur transition hover:border-white/25">
+        <article className={`${cardClassName} xl:col-span-2`}>
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <h2 className="text-shadow-title flex items-center gap-2 text-base font-semibold text-white">
@@ -1580,7 +1735,8 @@ export default function SettingsDashboard() {
             ))}
           </div>
         </article>
-        </div>
+          </div>
+        </section>
       </div>
     </section>
   );

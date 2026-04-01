@@ -207,7 +207,6 @@ export default function HomepageDashboard() {
     DEFAULT_HOMEPAGE_CONFIG.defaultSearchEngineId
   );
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [visitCount, setVisitCount] = useState<number | null>(null);
   const [geoInfo, setGeoInfo] = useState<Record<string, unknown> | null>(null);
   const [geoIp, setGeoIp] = useState('');
   const [geoLoading, setGeoLoading] = useState(true);
@@ -326,10 +325,7 @@ export default function HomepageDashboard() {
       setLoadError(null);
 
       try {
-        const [homepageConfig, count] = await Promise.all([
-          getHomepageConfig(),
-          getVisitCount().catch(() => null),
-        ]);
+        const homepageConfig = await getHomepageConfig();
 
         if (cancelled) {
           return;
@@ -337,7 +333,8 @@ export default function HomepageDashboard() {
 
         setConfig(homepageConfig);
         setSelectedEngineId(homepageConfig.defaultSearchEngineId);
-        setVisitCount(count);
+
+        void getVisitCount().catch(() => null);
       } catch (error) {
         if (!cancelled) {
           setLoadError(error instanceof Error ? error.message : '加载失败');
@@ -1093,9 +1090,6 @@ export default function HomepageDashboard() {
                       : '🌤 天气加载中...'}
                 </p>
               </div>
-              <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
-                访问：{visitCount ?? '-'}
-              </span>
               <div className="rounded-2xl border border-white/15 bg-slate-950/55 px-4 py-3 text-sm text-white">
                 <div className="flex items-center gap-3">
                   <div>

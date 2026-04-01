@@ -78,6 +78,29 @@ export type GeoResponse = {
   endpoint?: string;
 };
 
+export type VisitStatsRecord = {
+  ip: string;
+  location: string;
+  count: number;
+  firstVisitedAt: string;
+  lastVisitedAt: string;
+  geo?: {
+    country?: string;
+    region?: string;
+    city?: string;
+    district?: string;
+    timezone?: string;
+  };
+};
+
+export type VisitStatsResponse = {
+  windowDays: number;
+  totalVisits: number;
+  uniqueIps: number;
+  records: VisitStatsRecord[];
+  updatedAt: string;
+};
+
 function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -125,6 +148,20 @@ export async function getVisitCount(): Promise<number> {
   });
 
   return Number(data.visitCount) || 0;
+}
+
+export async function getVisitStats(): Promise<VisitStatsResponse> {
+  const data = await requestJson<VisitStatsResponse>('/visit?stats=1', {
+    method: 'GET',
+  });
+
+  return {
+    windowDays: Number(data.windowDays) || 30,
+    totalVisits: Number(data.totalVisits) || 0,
+    uniqueIps: Number(data.uniqueIps) || 0,
+    records: Array.isArray(data.records) ? data.records : [],
+    updatedAt: typeof data.updatedAt === 'string' ? data.updatedAt : new Date().toISOString(),
+  };
 }
 
 export async function getGeo(): Promise<GeoResponse> {
