@@ -23,6 +23,7 @@ import {
   getHomepageConfig,
   getVisitStats,
   saveHomepageConfig,
+  uploadBackgroundImage,
   type VisitStatsResponse,
 } from '@/lib/utils';
 import { isSettingsUnlocked } from '@/lib/unlock-state';
@@ -163,8 +164,13 @@ export default function SettingsDashboard() {
     'idle' | 'loading' | 'ready' | 'error'
   >('idle');
   const [visitStatsError, setVisitStatsError] = useState<string | null>(null);
+  const [backgroundUploadStatus, setBackgroundUploadStatus] = useState<
+    'idle' | 'uploading' | 'done' | 'error'
+  >('idle');
+  const [backgroundUploadHint, setBackgroundUploadHint] = useState<string | null>(null);
   const saveHintTimer = useRef<number | null>(null);
   const bookmarkImportInputRef = useRef<HTMLInputElement | null>(null);
+  const backgroundUploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const refreshableBookmarks = useMemo(
     () => config.bookmarks.filter((bookmark) => !isCustomIconBookmark(bookmark)),
@@ -703,6 +709,70 @@ export default function SettingsDashboard() {
     }
   };
 
+  const handleBackgroundFileUpload = async (
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0] || null;
+    event.target.value = '';
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      setBackgroundUploadStatus('error');
+      setBackgroundUploadHint('仅支持图片文件上传');
+      return;
+    }
+
+    if (file.size > 4 * 1024 * 1024) {
+      setBackgroundUploadStatus('error');
+      setBackgroundUploadHint('图片过大，当前限制 4MB');
+      return;
+    }
+
+    setBackgroundUploadStatus('uploading');
+    setBackgroundUploadHint(`正在上传：${file.name}`);
+
+    try {
+      const imageDataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          if (typeof result === 'string') {
+            resolve(result);
+            return;
+          }
+
+          reject(new Error('读取图片失败'));
+        };
+        reader.onerror = () => reject(new Error('读取图片失败'));
+        reader.readAsDataURL(file);
+      });
+
+      const uploaded = await uploadBackgroundImage(imageDataUrl, file.name);
+
+      updateConfig((prev) => ({
+        ...prev,
+        background: {
+          ...prev.background,
+          type: 'image',
+          imageUrl: uploaded.imageUrl,
+        },
+      }));
+
+      setBackgroundUploadStatus('done');
+      setBackgroundUploadHint(
+        `上传成功：${file.name}（${((uploaded.byteLength || file.size) / 1024).toFixed(1)} KB）`
+      );
+    } catch (error) {
+      setBackgroundUploadStatus('error');
+      setBackgroundUploadHint(
+        `上传失败：${error instanceof Error ? error.message : '未知错误'}`
+      );
+    }
+  };
+
   if (!accessChecked) {
     return (
       <section className="mx-auto flex min-h-screen w-full max-w-6xl items-center justify-center px-6 py-12">
@@ -1093,6 +1163,42 @@ export default function SettingsDashboard() {
 
           {config.background.type === 'image' && (
             <div className="mt-3 space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  ref={backgroundUploadInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleBackgroundFileUpload}
+                />
+                <button
+                  type="button"
+                  onClick={() => backgroundUploadInputRef.current?.click()}
+                  disabled={backgroundUploadStatus === 'uploading'}
+                  className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {backgroundUploadStatus === 'uploading' ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4" />
+                  )}
+                  上传本地图片（存储到 KV）
+                </button>
+                {backgroundUploadHint ? (
+                  <span
+                    className={`text-xs ${
+                      backgroundUploadStatus === 'error'
+                        ? 'text-amber-200'
+                        : backgroundUploadStatus === 'done'
+                          ? 'text-emerald-200'
+                          : 'text-cyan-200'
+                    }`}
+                  >
+                    {backgroundUploadHint}
+                  </span>
+                ) : null}
+              </div>
+
               <div>
                 <label className="mb-1 block text-xs text-slate-300">图片 URL</label>
                 <input

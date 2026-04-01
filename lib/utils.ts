@@ -112,6 +112,12 @@ export type VisitStatsResponse = {
   updatedAt: string;
 };
 
+export type BackgroundImageUploadResponse = {
+  imageUrl: string;
+  updatedAt?: string;
+  byteLength?: number;
+};
+
 function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
@@ -281,6 +287,26 @@ export async function saveHomepageConfig(
   const normalized = normalizeHomepageConfig(data);
   writeConfigCache(normalized);
   return normalized;
+}
+
+export async function uploadBackgroundImage(
+  imageDataUrl: string,
+  fileName: string
+): Promise<BackgroundImageUploadResponse> {
+  const data = await requestJson<BackgroundImageUploadResponse>('/background-image', {
+    method: 'POST',
+    body: JSON.stringify({ imageDataUrl, fileName }),
+  });
+
+  if (!data || typeof data.imageUrl !== 'string' || !data.imageUrl.trim()) {
+    throw new Error('背景图片上传成功，但返回数据缺少 imageUrl');
+  }
+
+  return {
+    imageUrl: data.imageUrl,
+    updatedAt: data.updatedAt,
+    byteLength: Number(data.byteLength) || 0,
+  };
 }
 
 export async function fetchBookmarkFavicon(url: string): Promise<string | null> {
