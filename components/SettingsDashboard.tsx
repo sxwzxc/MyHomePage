@@ -861,7 +861,9 @@ export default function SettingsDashboard() {
     setBackgroundUploadHint(`正在上传：${file.name}`);
 
     try {
-      const uploaded = await uploadBackgroundImage(file, file.name);
+      const uploaded = await uploadBackgroundImage(file, file.name, (progress) => {
+        setBackgroundUploadHint(`正在上传：${file.name}（${progress.percentage}%）`);
+      });
 
       updateConfig((prev) => ({
         ...prev,
@@ -1295,7 +1297,7 @@ export default function SettingsDashboard() {
                   ) : (
                     <Upload className="h-4 w-4" />
                   )}
-                  上传本地图片（存储到 KV，最大 20MB）
+                  上传本地图片（分片上传到 KV，最大 20MB）
                 </button>
                 {backgroundUploadHint ? (
                   <span

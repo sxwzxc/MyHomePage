@@ -120,12 +120,37 @@ export type BackgroundImageUploadResponse = {
   byteLength?: number;
 };
 
+export type BackgroundImageUploadProgress = {
+  uploadedBytes: number;
+  totalBytes: number;
+  percentage: number;
+  chunkIndex: number;
+  totalChunks: number;
+};
+
+type BackgroundImageUploadInitResponse = {
+  uploadId: string;
+  chunkByteLength: number;
+  totalChunks: number;
+};
+
+const BACKGROUND_UPLOAD_CHUNK_BYTES = 512 * 1024;
+
 function normalizeErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
 
   return String(error);
+}
+
+function encodeUint8ArrayToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (let index = 0; index < bytes.length; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+
+  return btoa(binary);
 }
 
 function readConfigCache(): HomepageConfig | null {
@@ -293,19 +318,109 @@ export async function saveHomepageConfig(
 
 export async function uploadBackgroundImage(
   imageDataOrFile: string | File,
-  fileName: string
+  fileName: string,
+  onProgress?: (progress: BackgroundImageUploadProgress) => void
 ): Promise<BackgroundImageUploadResponse> {
   const isFileBody = typeof File !== 'undefined' && imageDataOrFile instanceof File;
 
   const data = isFileBody
-    ? await requestJson<BackgroundImageUploadResponse>('/background-image', {
-        method: 'POST',
-        body: (() => {
-          const formData = new FormData();
-          formData.append('file', imageDataOrFile, fileName || imageDataOrFile.name);
-          return formData;
-        })(),
-      })
+    ? await (async () => {
+        const file = imageDataOrFile;
+        const contentType = (file.type || '').toLowerCase();
+
+        if (!contentType.startsWith('image/')) {
+          throw new Error('仅支持图片文件上传');
+        }
+
+        const totalBytes = file.size;
+        if (totalBytes <= 0) {
+          throw new Error('上传图片为空');
+        }
+
+        const requestedChunkByteLength = BACKGROUND_UPLOAD_CHUNK_BYTES;
+        let uploadId = '';
+
+        try {
+          const init = await requestJson<BackgroundImageUploadInitResponse>(
+            '/background-image?action=init',
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                fileName: fileName || file.name,
+                contentType,
+                byteLength: totalBytes,
+                chunkByteLength: requestedChunkByteLength,
+              }),
+            }
+          );
+
+          if (!init || typeof init.uploadId !== 'string' || !init.uploadId.trim()) {
+            throw new Error('初始化分片上传失败：缺少 uploadId');
+          }
+
+          uploadId = init.uploadId;
+          const chunkByteLength = Math.max(
+            64 * 1024,
+            Math.min(BACKGROUND_UPLOAD_CHUNK_BYTES, Number(init.chunkByteLength) || requestedChunkByteLength)
+          );
+          const totalChunks = Math.max(1, Number(init.totalChunks) || Math.ceil(totalBytes / chunkByteLength));
+
+          onProgress?.({
+            uploadedBytes: 0,
+            totalBytes,
+            percentage: 0,
+            chunkIndex: 0,
+            totalChunks,
+          });
+
+          for (let index = 0; index < totalChunks; index += 1) {
+            const start = index * chunkByteLength;
+            const end = Math.min(totalBytes, start + chunkByteLength);
+            const bytes = new Uint8Array(await file.slice(start, end).arrayBuffer());
+            const chunkBase64 = encodeUint8ArrayToBase64(bytes);
+
+            await requestJson('/background-image?action=chunk', {
+              method: 'POST',
+              body: JSON.stringify({
+                uploadId,
+                index,
+                chunkBase64,
+              }),
+            });
+
+            const uploadedBytes = end;
+            const percentage = Math.min(100, Math.round((uploadedBytes / totalBytes) * 100));
+            onProgress?.({
+              uploadedBytes,
+              totalBytes,
+              percentage,
+              chunkIndex: index + 1,
+              totalChunks,
+            });
+          }
+
+          return await requestJson<BackgroundImageUploadResponse>(
+            '/background-image?action=commit',
+            {
+              method: 'POST',
+              body: JSON.stringify({ uploadId }),
+            }
+          );
+        } catch (error) {
+          if (uploadId) {
+            try {
+              await requestJson('/background-image?action=abort', {
+                method: 'POST',
+                body: JSON.stringify({ uploadId }),
+              });
+            } catch {
+              // ignore abort errors
+            }
+          }
+
+          throw error;
+        }
+      })()
     : await requestJson<BackgroundImageUploadResponse>('/background-image', {
         method: 'POST',
         body: JSON.stringify({ imageDataUrl: imageDataOrFile, fileName }),

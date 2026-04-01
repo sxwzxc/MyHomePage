@@ -1,10 +1,24 @@
 const BACKGROUND_IMAGE_KEY = 'homepage:background:image:v1';
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const BACKGROUND_IMAGE_STREAM_KEY = `${BACKGROUND_IMAGE_KEY}:stream`;
+const BACKGROUND_IMAGE_UPLOAD_PREFIX = `${BACKGROUND_IMAGE_KEY}:upload:`;
 const BACKGROUND_IMAGE_CHUNK_PREFIX = `${BACKGROUND_IMAGE_KEY}:chunk:`;
+
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 const BASE64_CHUNK_SIZE = 256 * 1024;
+const UPLOAD_REQUEST_CHUNK_BYTE_LIMIT = 512 * 1024;
+const MAX_UPLOAD_CHUNK_BASE64_LENGTH =
+  Math.ceil((UPLOAD_REQUEST_CHUNK_BYTE_LIMIT * 4) / 3) + 16;
 
 function getChunkKey(index) {
   return `${BACKGROUND_IMAGE_CHUNK_PREFIX}${index}`;
+}
+
+function getUploadMetaKey(uploadId) {
+  return `${BACKGROUND_IMAGE_UPLOAD_PREFIX}${uploadId}:meta`;
+}
+
+function getUploadChunkKey(uploadId, index) {
+  return `${BACKGROUND_IMAGE_UPLOAD_PREFIX}${uploadId}:chunk:${index}`;
 }
 
 function getHeaders(extra = {}) {
@@ -101,14 +115,106 @@ function splitIntoChunks(text, chunkSize) {
 
 function encodeUint8ArrayToBase64(bytes) {
   let binary = '';
-  const chunkSize = 0x8000;
 
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    const chunk = bytes.subarray(i, i + chunkSize);
-    binary += String.fromCharCode(...chunk);
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
   }
 
   return btoa(binary);
+}
+
+function createUploadId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `u_${crypto.randomUUID().replace(/-/g, '')}`;
+  }
+
+  return `u_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+}
+
+function isSafeUploadId(uploadId) {
+  return typeof uploadId === 'string' && /^u_[a-zA-Z0-9_]{10,80}$/.test(uploadId);
+}
+
+async function readJsonBody(request) {
+  try {
+    return await request.json();
+  } catch {
+    return null;
+  }
+}
+
+function createReadableStreamFromBase64(base64Data) {
+  let index = 0;
+  const chunks = splitIntoChunks(base64Data, BASE64_CHUNK_SIZE);
+
+  return new ReadableStream({
+    pull(controller) {
+      if (index >= chunks.length) {
+        controller.close();
+        return;
+      }
+
+      try {
+        controller.enqueue(decodeBase64ToUint8Array(chunks[index]));
+        index += 1;
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+}
+
+async function getPreviousLegacyChunkCount(kv) {
+  try {
+    const previousRaw = await kv.get(BACKGROUND_IMAGE_KEY);
+    if (!previousRaw) {
+      return 0;
+    }
+
+    const previousParsed = JSON.parse(previousRaw);
+    const count = Number(previousParsed?.chunkCount);
+    if (previousParsed?.chunked === true && Number.isInteger(count) && count > 0) {
+      return count;
+    }
+  } catch {
+    // ignore parse failures
+  }
+
+  return 0;
+}
+
+async function cleanupLegacyChunks(kv, chunkCount) {
+  if (typeof kv.delete !== 'function') {
+    return;
+  }
+
+  if (!Number.isInteger(chunkCount) || chunkCount <= 0) {
+    return;
+  }
+
+  for (let index = 0; index < chunkCount; index += 1) {
+    await kv.delete(getChunkKey(index));
+  }
+}
+
+async function writeImageStreamToKv(kv, payloadMeta, stream, updatedAt) {
+  const previousLegacyChunkCount = await getPreviousLegacyChunkCount(kv);
+
+  await kv.put(BACKGROUND_IMAGE_STREAM_KEY, stream);
+  await kv.put(
+    BACKGROUND_IMAGE_KEY,
+    JSON.stringify({
+      contentType: payloadMeta.contentType,
+      fileName: payloadMeta.fileName,
+      byteLength: payloadMeta.byteLength,
+      updatedAt,
+      storageType: 'stream',
+      streamKey: BACKGROUND_IMAGE_STREAM_KEY,
+      version: 3,
+    })
+  );
+
+  await cleanupLegacyChunks(kv, previousLegacyChunkCount);
 }
 
 function buildImagePayloadFromJson(body) {
@@ -234,46 +340,364 @@ async function readStoredBase64(kv, parsed) {
   return base64Data;
 }
 
-async function writeImagePayloadToKv(kv, payload, updatedAt) {
-  let previousChunkCount = 0;
+async function readUploadMeta(kv, uploadId) {
+  const raw = await kv.get(getUploadMetaKey(uploadId));
+  if (!raw) {
+    return null;
+  }
+
+  let parsed;
   try {
-    const previousRaw = await kv.get(BACKGROUND_IMAGE_KEY);
-    if (previousRaw) {
-      const previousParsed = JSON.parse(previousRaw);
-      const count = Number(previousParsed?.chunkCount);
-      if (previousParsed?.chunked === true && Number.isInteger(count) && count > 0) {
-        previousChunkCount = count;
-      }
-    }
+    parsed = JSON.parse(raw);
   } catch {
-    // ignore previous metadata parse errors
+    return null;
   }
 
-  const chunks = splitIntoChunks(payload.base64Data, BASE64_CHUNK_SIZE);
+  const contentType = typeof parsed?.contentType === 'string' ? parsed.contentType : '';
+  const fileName = typeof parsed?.fileName === 'string' ? parsed.fileName : '';
+  const byteLength = Number(parsed?.byteLength);
+  const totalChunks = Number(parsed?.totalChunks);
+  const chunkByteLength = Number(parsed?.chunkByteLength);
 
-  for (let index = 0; index < chunks.length; index += 1) {
-    await kv.put(getChunkKey(index), chunks[index]);
+  if (!contentType.startsWith('image/')) {
+    return null;
   }
 
+  if (!Number.isInteger(byteLength) || byteLength <= 0 || byteLength > MAX_IMAGE_BYTES) {
+    return null;
+  }
+
+  if (!Number.isInteger(totalChunks) || totalChunks <= 0 || totalChunks > 4096) {
+    return null;
+  }
+
+  if (
+    !Number.isInteger(chunkByteLength) ||
+    chunkByteLength <= 0 ||
+    chunkByteLength > UPLOAD_REQUEST_CHUNK_BYTE_LIMIT
+  ) {
+    return null;
+  }
+
+  return {
+    uploadId,
+    contentType,
+    fileName,
+    byteLength,
+    totalChunks,
+    chunkByteLength,
+  };
+}
+
+async function cleanupUploadSession(kv, uploadId, totalChunks) {
+  if (typeof kv.delete !== 'function') {
+    return;
+  }
+
+  await kv.delete(getUploadMetaKey(uploadId));
+
+  if (!Number.isInteger(totalChunks) || totalChunks <= 0) {
+    return;
+  }
+
+  for (let index = 0; index < totalChunks; index += 1) {
+    await kv.delete(getUploadChunkKey(uploadId, index));
+  }
+}
+
+async function ensureUploadChunksComplete(kv, meta) {
+  let totalBytes = 0;
+
+  for (let index = 0; index < meta.totalChunks; index += 1) {
+    const chunkBase64 = await kv.get(getUploadChunkKey(meta.uploadId, index));
+    if (typeof chunkBase64 !== 'string' || !chunkBase64) {
+      throw new Error(`Missing upload chunk at index ${index}`);
+    }
+
+    const chunkByteLength = base64ByteLength(chunkBase64);
+    if (!Number.isFinite(chunkByteLength) || chunkByteLength <= 0) {
+      throw new Error(`Upload chunk at index ${index} is invalid`);
+    }
+
+    if (chunkByteLength > meta.chunkByteLength) {
+      throw new Error(`Upload chunk at index ${index} exceeds byte limit`);
+    }
+
+    if (index < meta.totalChunks - 1 && chunkByteLength !== meta.chunkByteLength) {
+      throw new Error(`Upload chunk at index ${index} has unexpected size`);
+    }
+
+    totalBytes += chunkByteLength;
+  }
+
+  if (totalBytes !== meta.byteLength) {
+    throw new Error(
+      `Upload size mismatch: expected ${meta.byteLength} bytes, got ${totalBytes} bytes`
+    );
+  }
+}
+
+function createUploadChunkStream(kv, meta) {
+  let index = 0;
+
+  return new ReadableStream({
+    async pull(controller) {
+      if (index >= meta.totalChunks) {
+        controller.close();
+        return;
+      }
+
+      try {
+        const chunkBase64 = await kv.get(getUploadChunkKey(meta.uploadId, index));
+        if (typeof chunkBase64 !== 'string' || !chunkBase64) {
+          throw new Error(`Missing upload chunk at index ${index}`);
+        }
+
+        controller.enqueue(decodeBase64ToUint8Array(chunkBase64));
+        index += 1;
+      } catch (error) {
+        controller.error(error);
+      }
+    },
+  });
+}
+
+async function handleUploadInit(kv, body) {
+  const contentType =
+    typeof body?.contentType === 'string' ? body.contentType.toLowerCase().trim() : '';
+  if (!contentType.startsWith('image/')) {
+    return jsonResponse({ error: '仅支持图片文件上传' }, 400);
+  }
+
+  const fileName = typeof body?.fileName === 'string' ? body.fileName.trim() : '';
+  const byteLength = Number(body?.byteLength);
+
+  if (!Number.isInteger(byteLength) || byteLength <= 0) {
+    return jsonResponse({ error: 'byteLength must be a positive integer' }, 400);
+  }
+
+  if (byteLength > MAX_IMAGE_BYTES) {
+    return jsonResponse(
+      {
+        error: `图片过大，当前限制 ${Math.floor(MAX_IMAGE_BYTES / (1024 * 1024))}MB`,
+      },
+      413
+    );
+  }
+
+  const requestedChunkByteLength = Number(body?.chunkByteLength);
+  const chunkByteLength = Math.max(
+    64 * 1024,
+    Math.min(
+      UPLOAD_REQUEST_CHUNK_BYTE_LIMIT,
+      Number.isInteger(requestedChunkByteLength)
+        ? requestedChunkByteLength
+        : UPLOAD_REQUEST_CHUNK_BYTE_LIMIT
+    )
+  );
+  const totalChunks = Math.max(1, Math.ceil(byteLength / chunkByteLength));
+
+  const uploadId = createUploadId();
   await kv.put(
-    BACKGROUND_IMAGE_KEY,
+    getUploadMetaKey(uploadId),
     JSON.stringify({
-      contentType: payload.contentType,
-      fileName: payload.fileName,
-      byteLength: payload.byteLength,
-      updatedAt,
-      chunked: true,
-      chunkCount: chunks.length,
-      chunkSize: BASE64_CHUNK_SIZE,
-      version: 2,
+      uploadId,
+      contentType,
+      fileName,
+      byteLength,
+      chunkByteLength,
+      totalChunks,
+      createdAt: new Date().toISOString(),
+      version: 1,
     })
   );
 
-  if (typeof kv.delete === 'function' && previousChunkCount > chunks.length) {
-    for (let index = chunks.length; index < previousChunkCount; index += 1) {
-      await kv.delete(getChunkKey(index));
-    }
+  return jsonResponse({
+    uploadId,
+    chunkByteLength,
+    totalChunks,
+    byteLength,
+  });
+}
+
+async function handleUploadChunk(kv, body) {
+  const uploadId = typeof body?.uploadId === 'string' ? body.uploadId.trim() : '';
+  if (!isSafeUploadId(uploadId)) {
+    return jsonResponse({ error: 'Invalid uploadId' }, 400);
   }
+
+  const index = Number(body?.index);
+  if (!Number.isInteger(index) || index < 0) {
+    return jsonResponse({ error: 'Invalid chunk index' }, 400);
+  }
+
+  const chunkBase64 = typeof body?.chunkBase64 === 'string' ? body.chunkBase64.trim() : '';
+  if (!chunkBase64) {
+    return jsonResponse({ error: 'chunkBase64 is required' }, 400);
+  }
+
+  if (chunkBase64.length > MAX_UPLOAD_CHUNK_BASE64_LENGTH) {
+    return jsonResponse({ error: 'Chunk payload too large' }, 413);
+  }
+
+  const meta = await readUploadMeta(kv, uploadId);
+  if (!meta) {
+    return jsonResponse({ error: 'Upload session not found or expired' }, 404);
+  }
+
+  if (index >= meta.totalChunks) {
+    return jsonResponse({ error: 'Chunk index out of range' }, 400);
+  }
+
+  const chunkByteLength = base64ByteLength(chunkBase64);
+  if (!Number.isFinite(chunkByteLength) || chunkByteLength <= 0) {
+    return jsonResponse({ error: 'Invalid chunk payload' }, 400);
+  }
+
+  if (chunkByteLength > meta.chunkByteLength) {
+    return jsonResponse({ error: 'Chunk payload exceeds configured byte length' }, 413);
+  }
+
+  if (index < meta.totalChunks - 1 && chunkByteLength !== meta.chunkByteLength) {
+    return jsonResponse({ error: 'Chunk payload size mismatch' }, 400);
+  }
+
+  await kv.put(getUploadChunkKey(uploadId, index), chunkBase64);
+
+  return jsonResponse({
+    uploadId,
+    index,
+    received: true,
+    chunkByteLength,
+  });
+}
+
+async function handleUploadCommit(kv, body) {
+  const uploadId = typeof body?.uploadId === 'string' ? body.uploadId.trim() : '';
+  if (!isSafeUploadId(uploadId)) {
+    return jsonResponse({ error: 'Invalid uploadId' }, 400);
+  }
+
+  const meta = await readUploadMeta(kv, uploadId);
+  if (!meta) {
+    return jsonResponse({ error: 'Upload session not found or expired' }, 404);
+  }
+
+  const nowIso = new Date().toISOString();
+
+  try {
+    await ensureUploadChunksComplete(kv, meta);
+
+    const stream = createUploadChunkStream(kv, meta);
+    await writeImageStreamToKv(
+      kv,
+      {
+        contentType: meta.contentType,
+        fileName: meta.fileName,
+        byteLength: meta.byteLength,
+      },
+      stream,
+      nowIso
+    );
+
+    await cleanupUploadSession(kv, uploadId, meta.totalChunks);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const status =
+      message.includes('Missing upload chunk') ||
+      message.includes('size mismatch') ||
+      message.includes('Upload chunk')
+        ? 400
+        : 500;
+
+    return jsonResponse({ error: `背景图片分片合并失败：${message}` }, status);
+  }
+
+  const cacheBustedUrl = `/background-image?v=${encodeURIComponent(nowIso)}`;
+
+  return jsonResponse({
+    imageUrl: cacheBustedUrl,
+    updatedAt: nowIso,
+    byteLength: meta.byteLength,
+  });
+}
+
+async function handleUploadAbort(kv, body) {
+  const uploadId = typeof body?.uploadId === 'string' ? body.uploadId.trim() : '';
+  if (!isSafeUploadId(uploadId)) {
+    return jsonResponse({ error: 'Invalid uploadId' }, 400);
+  }
+
+  const meta = await readUploadMeta(kv, uploadId);
+  if (meta) {
+    await cleanupUploadSession(kv, uploadId, meta.totalChunks);
+  } else if (typeof kv.delete === 'function') {
+    await kv.delete(getUploadMetaKey(uploadId));
+  }
+
+  return jsonResponse({
+    uploadId,
+    aborted: true,
+  });
+}
+
+async function handleLegacyPost(kv, request) {
+  const requestContentType = (request.headers.get('content-type') || '').toLowerCase();
+
+  const payload = requestContentType.includes('multipart/form-data')
+    ? await buildImagePayloadFromFormData(request)
+    : await (async () => {
+        const body = await readJsonBody(request);
+        if (!body) {
+          return {
+            ok: false,
+            error: 'Invalid JSON body',
+            status: 400,
+          };
+        }
+
+        return buildImagePayloadFromJson(body);
+      })();
+
+  if (!payload.ok) {
+    return jsonResponse({ error: payload.error }, payload.status);
+  }
+
+  if (payload.byteLength > MAX_IMAGE_BYTES) {
+    return jsonResponse(
+      {
+        error: `图片过大，当前限制 ${Math.floor(MAX_IMAGE_BYTES / (1024 * 1024))}MB`,
+      },
+      413
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+
+  try {
+    const stream = createReadableStreamFromBase64(payload.base64Data);
+    await writeImageStreamToKv(
+      kv,
+      {
+        contentType: payload.contentType,
+        fileName: payload.fileName,
+        byteLength: payload.byteLength,
+      },
+      stream,
+      nowIso
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ error: `背景图片写入 KV 失败：${message}` }, 500);
+  }
+
+  const cacheBustedUrl = `/background-image?v=${encodeURIComponent(nowIso)}`;
+
+  return jsonResponse({
+    imageUrl: cacheBustedUrl,
+    updatedAt: nowIso,
+    byteLength: payload.byteLength,
+  });
 }
 
 async function handleGet(context) {
@@ -307,6 +731,31 @@ async function handleGet(context) {
   const contentType = typeof parsed?.contentType === 'string' ? parsed.contentType : '';
   if (!contentType.startsWith('image/')) {
     return jsonResponse({ error: 'Stored background image payload is incomplete' }, 500);
+  }
+
+  if (parsed?.storageType === 'stream') {
+    const streamKey =
+      typeof parsed?.streamKey === 'string' && parsed.streamKey
+        ? parsed.streamKey
+        : BACKGROUND_IMAGE_STREAM_KEY;
+
+    try {
+      const stream = await kv.get(streamKey, { type: 'stream' });
+      if (!stream) {
+        return jsonResponse({ error: 'Stored background image stream not found' }, 500);
+      }
+
+      return new Response(stream, {
+        status: 200,
+        headers: getHeaders({
+          'content-type': contentType,
+          'cache-control': 'public, max-age=60',
+        }),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: `Failed to read stored background image stream: ${message}` }, 500);
+    }
   }
 
   let base64Data = '';
@@ -350,54 +799,35 @@ async function handlePost(context) {
   }
 
   const request = context.request;
-  const requestContentType = (request.headers.get('content-type') || '').toLowerCase();
+  const url = new URL(request.url);
+  const action = (url.searchParams.get('action') || '').trim().toLowerCase();
 
-  const payload = requestContentType.includes('multipart/form-data')
-    ? await buildImagePayloadFromFormData(request)
-    : await (async () => {
-        let body;
-        try {
-          body = await request.json();
-        } catch {
-          return {
-            ok: false,
-            error: 'Invalid JSON body',
-            status: 400,
-          };
-        }
+  if (action) {
+    const body = await readJsonBody(request);
+    if (!body) {
+      return jsonResponse({ error: 'Invalid JSON body' }, 400);
+    }
 
-        return buildImagePayloadFromJson(body);
-      })();
+    if (action === 'init') {
+      return handleUploadInit(kv, body);
+    }
 
-  if (!payload.ok) {
-    return jsonResponse({ error: payload.error }, payload.status);
+    if (action === 'chunk') {
+      return handleUploadChunk(kv, body);
+    }
+
+    if (action === 'commit') {
+      return handleUploadCommit(kv, body);
+    }
+
+    if (action === 'abort') {
+      return handleUploadAbort(kv, body);
+    }
+
+    return jsonResponse({ error: `Unsupported upload action: ${action}` }, 400);
   }
 
-  if (payload.byteLength > MAX_IMAGE_BYTES) {
-    return jsonResponse(
-      {
-        error: `图片过大，当前限制 ${Math.floor(MAX_IMAGE_BYTES / (1024 * 1024))}MB`,
-      },
-      413
-    );
-  }
-
-  const nowIso = new Date().toISOString();
-
-  try {
-    await writeImagePayloadToKv(kv, payload, nowIso);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return jsonResponse({ error: `背景图片写入 KV 失败：${message}` }, 500);
-  }
-
-  const cacheBustedUrl = `/background-image?v=${encodeURIComponent(nowIso)}`;
-
-  return jsonResponse({
-    imageUrl: cacheBustedUrl,
-    updatedAt: nowIso,
-    byteLength: payload.byteLength,
-  });
+  return handleLegacyPost(kv, request);
 }
 
 export async function onRequestOptions() {
