@@ -290,22 +290,59 @@ export async function saveHomepageConfig(
 }
 
 export async function uploadBackgroundImage(
-  imageDataUrl: string,
+  imageFile: File,
   fileName: string
 ): Promise<BackgroundImageUploadResponse> {
-  const data = await requestJson<BackgroundImageUploadResponse>('/background-image', {
-    method: 'POST',
-    body: JSON.stringify({ imageDataUrl, fileName }),
-  });
+  const host = getFunctionsHost();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  if (!data || typeof data.imageUrl !== 'string' || !data.imageUrl.trim()) {
+  const formData = new FormData();
+  formData.append('image', imageFile, imageFile.name);
+  formData.append('fileName', fileName);
+
+  let res: Response;
+  try {
+    res = await fetch(`${host}/background-image`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  const rawText = await res.text();
+  let data: unknown = null;
+
+  if (rawText.trim()) {
+    try {
+      data = JSON.parse(rawText);
+    } catch {
+      throw new Error(
+        `服务返回了非 JSON 内容（${res.status}），请确认函数接口已正确部署。`
+      );
+    }
+  }
+
+  if (!res.ok) {
+    const msg =
+      data && typeof data === 'object' && 'error' in data
+        ? String((data as { error: unknown }).error)
+        : `上传失败（HTTP ${res.status}）`;
+    throw new Error(msg);
+  }
+
+  const typed = data as BackgroundImageUploadResponse | null;
+
+  if (!typed || typeof typed.imageUrl !== 'string' || !typed.imageUrl.trim()) {
     throw new Error('背景图片上传成功，但返回数据缺少 imageUrl');
   }
 
   return {
-    imageUrl: data.imageUrl,
-    updatedAt: data.updatedAt,
-    byteLength: Number(data.byteLength) || 0,
+    imageUrl: typed.imageUrl,
+    updatedAt: typed.updatedAt,
+    byteLength: Number(typed.byteLength) || 0,
   };
 }
 

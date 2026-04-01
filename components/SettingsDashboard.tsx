@@ -858,22 +858,7 @@ export default function SettingsDashboard() {
     setBackgroundUploadHint(`正在上传：${file.name}`);
 
     try {
-      const imageDataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result;
-          if (typeof result === 'string') {
-            resolve(result);
-            return;
-          }
-
-          reject(new Error('读取图片失败'));
-        };
-        reader.onerror = () => reject(new Error('读取图片失败'));
-        reader.readAsDataURL(file);
-      });
-
-      const uploaded = await uploadBackgroundImage(imageDataUrl, file.name);
+      const uploaded = await uploadBackgroundImage(file, file.name);
 
       updateConfig((prev) => ({
         ...prev,
