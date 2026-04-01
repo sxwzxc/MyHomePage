@@ -3,7 +3,9 @@
 中文 | [English](./README_en.md)
 
 简洁高效的个人起始页，基于 **Next.js** 静态导出 + **EdgeOne Pages Functions** 构建，使用 KV 存储实现配置持久化。
-
+![预览](image.png)
+![预览2](image-1.png)
+![预览3](image-2.png)
 ## 功能一览
 
 ### 搜索
