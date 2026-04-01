@@ -1065,7 +1065,7 @@ export default function SettingsDashboard() {
                 max="6"
                 value={bookmarkColumnsInput}
                 onChange={(event) => setBookmarkColumnsInput(Number(event.target.value))}
-                className="w-full"
+                className="slider-thumb"
               />
             </div>
 
@@ -1081,7 +1081,7 @@ export default function SettingsDashboard() {
                 onChange={(event) =>
                   setFaviconAutoRefreshMinutesInput(Number(event.target.value))
                 }
-                className="w-full"
+                className="slider-thumb"
               />
             </div>
           </div>
@@ -1223,6 +1223,7 @@ export default function SettingsDashboard() {
                   type="range"
                   min="0"
                   max="10"
+                  step="0.5"
                   value={config.background.imageBlur || 0}
                   onChange={(e) => {
                     updateConfig((prev) => ({
@@ -1233,29 +1234,30 @@ export default function SettingsDashboard() {
                       },
                     }));
                   }}
-                  className="w-full"
+                  className="slider-thumb"
                 />
               </div>
 
               <div>
                 <label className="mb-1 block text-xs text-slate-300">
-                  不透明度: {config.background.imageOpacity || 100}%
+                  遮罩浓度: {config.background.imageOverlay ?? 50}%
                 </label>
                 <input
                   type="range"
                   min="0"
                   max="100"
-                  value={config.background.imageOpacity || 100}
+                  step="1"
+                  value={config.background.imageOverlay ?? 50}
                   onChange={(e) => {
                     updateConfig((prev) => ({
                       ...prev,
                       background: {
                         ...prev.background,
-                        imageOpacity: Number(e.target.value),
+                        imageOverlay: Number(e.target.value),
                       },
                     }));
                   }}
-                  className="w-full"
+                  className="slider-thumb"
                 />
               </div>
             </div>
@@ -1374,7 +1376,7 @@ export default function SettingsDashboard() {
                       },
                     }));
                   }}
-                  className="w-full"
+                  className="slider-thumb"
                 />
               </div>
 
@@ -1400,7 +1402,7 @@ export default function SettingsDashboard() {
                       },
                     }));
                   }}
-                  className="w-full"
+                  className="slider-thumb"
                 />
               </div>
             </div>

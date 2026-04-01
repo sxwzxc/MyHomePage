@@ -18,7 +18,7 @@ export type BackgroundConfig = {
   type: 'animated-gradient' | 'image' | 'solid';
   imageUrl?: string;
   imageBlur?: number; // 0-10
-  imageOpacity?: number; // 0-100
+  imageOverlay?: number; // 0-100, controls the dark overlay opacity on background image
   gradientPreset?: string;
   solidColor?: string;
 };
@@ -157,7 +157,7 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   background: {
     type: 'animated-gradient',
     imageBlur: 5,
-    imageOpacity: 80,
+    imageOverlay: 50,
     gradientPreset: 'default',
   },
   news: {
@@ -429,10 +429,12 @@ function normalizeBackgroundConfig(value: unknown): BackgroundConfig {
       typeof value.imageBlur === 'number'
         ? Math.max(0, Math.min(10, value.imageBlur))
         : 5,
-    imageOpacity:
-      typeof value.imageOpacity === 'number'
-        ? Math.max(0, Math.min(100, value.imageOpacity))
-        : 80,
+    imageOverlay:
+      typeof value.imageOverlay === 'number'
+        ? Math.max(0, Math.min(100, value.imageOverlay))
+        : typeof value.imageOpacity === 'number'
+          ? Math.max(0, Math.min(100, value.imageOpacity))
+          : 50,
     gradientPreset: asString(value.gradientPreset, 'default'),
     solidColor: asString(value.solidColor),
   };

@@ -132,10 +132,12 @@ export default function AnimatedBackground({ config }: AnimatedBackgroundProps) 
           style={{
             backgroundImage: `url(${config.imageUrl})`,
             filter: `blur(${config.imageBlur || 0}px)`,
-            opacity: (config.imageOpacity || 100) / 100,
           }}
         />
-        <div className="fixed inset-0 -z-10 bg-slate-950/50" />
+        <div
+          className="fixed inset-0 -z-10 bg-slate-950 transition-opacity duration-500"
+          style={{ opacity: (config.imageOverlay ?? 50) / 100 }}
+        />
       </>
     );
   }
