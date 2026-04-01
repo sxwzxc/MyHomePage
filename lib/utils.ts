@@ -162,7 +162,7 @@ export async function getVisitCount(): Promise<number> {
 }
 
 export async function getVisitStats(): Promise<VisitStatsResponse> {
-  const paths = ['/visit?stats=1', '/visit-stats'];
+  const paths = ['/visit-stats', '/visit?stats=1'];
   const errors: string[] = [];
 
   for (const path of paths) {
@@ -182,7 +182,8 @@ export async function getVisitStats(): Promise<VisitStatsResponse> {
             : new Date().toISOString(),
       };
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      errors.push(`${path}: ${message}`);
     }
   }
 

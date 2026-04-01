@@ -1,7 +1,7 @@
-const VISIT_COUNT_KEY = 'visitCount';
-const VISIT_DETAILS_KEY = 'visit:details:v1';
+const VISIT_EVENTS_KEY = 'visit:events:v2';
 const VISIT_RETENTION_DAYS = 30;
 const VISIT_RETENTION_MS = VISIT_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+const VISIT_EVENT_LIMIT = 20000;
 
 function getKvBinding(env) {
   if (env && env.myhomepage) {
@@ -47,6 +47,7 @@ function readGeoValue(geo, keys) {
 
   for (const key of keys) {
     const value = geo[key];
+
     if (typeof value === 'string' && value.trim()) {
       return value.trim();
     }
@@ -113,41 +114,33 @@ function normalizeTimestamp(value, fallback) {
   return fallback;
 }
 
-function normalizeVisitEntry(value, fallbackNowIso) {
+function normalizeVisitEvent(value, fallbackNowIso) {
   if (!value || typeof value !== 'object') {
     return null;
   }
 
   const ip = asString(value.ip, 'unknown').trim() || 'unknown';
   const location = asString(value.location, '未知位置').trim() || '未知位置';
-  const countRaw = Number(value.count);
-  const count = Number.isFinite(countRaw) && countRaw > 0 ? Math.round(countRaw) : 1;
+  const visitedAt = normalizeTimestamp(value.visitedAt, fallbackNowIso);
 
   const geoValue = value.geo && typeof value.geo === 'object' ? value.geo : {};
-
-  const geo = {
-    country: asString(geoValue.country).trim(),
-    region: asString(geoValue.region).trim(),
-    city: asString(geoValue.city).trim(),
-    district: asString(geoValue.district).trim(),
-    timezone: asString(geoValue.timezone).trim(),
-  };
-
-  const lastVisitedAt = normalizeTimestamp(value.lastVisitedAt, fallbackNowIso);
-  const firstVisitedAt = normalizeTimestamp(value.firstVisitedAt, lastVisitedAt);
 
   return {
     ip,
     location,
-    count,
-    firstVisitedAt,
-    lastVisitedAt,
-    geo,
+    visitedAt,
+    geo: {
+      country: asString(geoValue.country).trim(),
+      region: asString(geoValue.region).trim(),
+      city: asString(geoValue.city).trim(),
+      district: asString(geoValue.district).trim(),
+      timezone: asString(geoValue.timezone).trim(),
+    },
   };
 }
 
-async function loadVisitEntries(kv, nowIso) {
-  const raw = await kv.get(VISIT_DETAILS_KEY);
+async function loadVisitEvents(kv, nowIso) {
+  const raw = await kv.get(VISIT_EVENTS_KEY);
   if (!raw) {
     return [];
   }
@@ -159,68 +152,63 @@ async function loadVisitEntries(kv, nowIso) {
     }
 
     return parsed
-      .map((item) => normalizeVisitEntry(item, nowIso))
+      .map((item) => normalizeVisitEvent(item, nowIso))
       .filter(Boolean);
   } catch {
     return [];
   }
 }
 
-function pruneVisitEntries(entries, nowMs) {
+function pruneVisitEvents(events, nowMs) {
   const cutoff = nowMs - VISIT_RETENTION_MS;
 
-  return entries.filter((entry) => {
-    const lastVisitedAt = Date.parse(entry.lastVisitedAt);
-    return Number.isFinite(lastVisitedAt) && lastVisitedAt >= cutoff;
+  return events.filter((event) => {
+    const visitedAt = Date.parse(event.visitedAt);
+    return Number.isFinite(visitedAt) && visitedAt >= cutoff;
   });
 }
 
-function upsertVisitEntry(entries, request, nowIso) {
-  const ip = resolveClientIp(request) || 'unknown';
-  const geo = pickGeoSnapshot(request);
-  const location = formatGeoLocation(geo);
+function aggregateVisitEvents(events) {
+  const grouped = new Map();
 
-  const existing = entries.find((entry) => entry.ip === ip && entry.location === location);
+  for (const event of events) {
+    const key = `${event.ip}__${event.location}`;
+    const existing = grouped.get(key);
 
-  if (!existing) {
-    return [
-      ...entries,
-      {
-        ip,
-        location,
+    if (!existing) {
+      grouped.set(key, {
+        ip: event.ip,
+        location: event.location,
         count: 1,
-        firstVisitedAt: nowIso,
-        lastVisitedAt: nowIso,
-        geo,
-      },
-    ];
-  }
-
-  return entries.map((entry) => {
-    if (entry.ip !== ip || entry.location !== location) {
-      return entry;
+        firstVisitedAt: event.visitedAt,
+        lastVisitedAt: event.visitedAt,
+        geo: {
+          ...event.geo,
+        },
+      });
+      continue;
     }
 
-    return {
-      ...entry,
-      count: entry.count + 1,
-      lastVisitedAt: nowIso,
-      geo: {
-        country: geo.country || entry.geo.country || '',
-        region: geo.region || entry.geo.region || '',
-        city: geo.city || entry.geo.city || '',
-        district: geo.district || entry.geo.district || '',
-        timezone: geo.timezone || entry.geo.timezone || '',
-      },
+    existing.count += 1;
+
+    if (Date.parse(event.visitedAt) < Date.parse(existing.firstVisitedAt)) {
+      existing.firstVisitedAt = event.visitedAt;
+    }
+
+    if (Date.parse(event.visitedAt) > Date.parse(existing.lastVisitedAt)) {
+      existing.lastVisitedAt = event.visitedAt;
+    }
+
+    existing.geo = {
+      country: event.geo.country || existing.geo.country || '',
+      region: event.geo.region || existing.geo.region || '',
+      city: event.geo.city || existing.geo.city || '',
+      district: event.geo.district || existing.geo.district || '',
+      timezone: event.geo.timezone || existing.geo.timezone || '',
     };
-  });
-}
+  }
 
-function summarizeVisitEntries(entries) {
-  const totalVisits = entries.reduce((sum, entry) => sum + entry.count, 0);
-  const uniqueIps = new Set(entries.map((entry) => entry.ip)).size;
-
-  const records = [...entries].sort((a, b) => {
+  const records = Array.from(grouped.values()).sort((a, b) => {
     if (b.count !== a.count) {
       return b.count - a.count;
     }
@@ -229,85 +217,95 @@ function summarizeVisitEntries(entries) {
   });
 
   return {
-    totalVisits,
-    uniqueIps,
+    totalVisits: events.length,
+    uniqueIps: new Set(events.map((event) => event.ip)).size,
     records,
   };
 }
 
-async function persistVisitEntries(kv, entries) {
-  await kv.put(VISIT_DETAILS_KEY, JSON.stringify(entries));
+function buildVisitEvent(request, nowIso) {
+  const geo = pickGeoSnapshot(request);
+
+  return {
+    ip: resolveClientIp(request) || 'unknown',
+    location: formatGeoLocation(geo),
+    visitedAt: nowIso,
+    geo,
+  };
 }
 
-async function incrementVisitCount(kv) {
-  const rawVisitCount = await kv.get(VISIT_COUNT_KEY);
-  let visitCount = Number(rawVisitCount);
+async function persistVisitEvents(kv, events) {
+  await kv.put(VISIT_EVENTS_KEY, JSON.stringify(events));
+}
 
-  if (!Number.isFinite(visitCount)) {
-    visitCount = 0;
+async function handleGetRequest(context) {
+  const request = context?.request;
+  const kv = getKvBinding(context?.env);
+
+  if (!kv) {
+    throw new Error(
+      "KV namespace binding not found. Please bind namespace 'myhomepage' (fallback: 'my_kv')."
+    );
   }
 
-  visitCount += 1;
-  await kv.put(VISIT_COUNT_KEY, String(visitCount));
-  return visitCount;
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const url = new URL(request.url);
+  const statsOnly = url.searchParams.get('stats') === '1';
+
+  const loadedEvents = await loadVisitEvents(kv, nowIso);
+  const prunedEvents = pruneVisitEvents(loadedEvents, nowMs);
+
+  if (statsOnly) {
+    if (prunedEvents.length !== loadedEvents.length) {
+      await persistVisitEvents(kv, prunedEvents);
+    }
+
+    const summary = aggregateVisitEvents(prunedEvents);
+
+    return jsonResponse({
+      windowDays: VISIT_RETENTION_DAYS,
+      totalVisits: summary.totalVisits,
+      uniqueIps: summary.uniqueIps,
+      records: summary.records,
+      updatedAt: nowIso,
+    });
+  }
+
+  const nextEvents = [...prunedEvents, buildVisitEvent(request, nowIso)];
+  const overflow = nextEvents.length - VISIT_EVENT_LIMIT;
+  if (overflow > 0) {
+    nextEvents.splice(0, overflow);
+  }
+
+  await persistVisitEvents(kv, nextEvents);
+
+  return jsonResponse({
+    visitCount: nextEvents.length,
+  });
 }
 
 export async function onRequestOptions() {
   return jsonResponse({ ok: true });
 }
 
-export async function onRequest({ request, env }) {
+export async function onRequestGet(context) {
+  return handleGetRequest(context);
+}
+
+export async function onRequest(context) {
+  const method = context?.request?.method || 'UNKNOWN';
+
   try {
-    const kv = getKvBinding(env);
-
-    if (!kv) {
-      throw new Error(
-        "KV namespace binding not found. Please bind namespace 'myhomepage' (fallback: 'my_kv')."
-      );
-    }
-
-    if (request.method === 'OPTIONS') {
+    if (method === 'OPTIONS') {
       return onRequestOptions();
     }
 
-    if (request.method !== 'GET') {
-      return jsonResponse({ error: 'Method not allowed' }, 405);
+    if (method === 'GET') {
+      return onRequestGet(context);
     }
 
-    const nowMs = Date.now();
-    const nowIso = new Date(nowMs).toISOString();
-    const url = new URL(request.url);
-    const queryStatsOnly = url.searchParams.get('stats') === '1';
-
-    if (queryStatsOnly) {
-      const existingEntries = await loadVisitEntries(kv, nowIso);
-      const prunedEntries = pruneVisitEntries(existingEntries, nowMs);
-
-      if (prunedEntries.length !== existingEntries.length) {
-        await persistVisitEntries(kv, prunedEntries);
-      }
-
-      const summary = summarizeVisitEntries(prunedEntries);
-
-      return jsonResponse({
-        windowDays: VISIT_RETENTION_DAYS,
-        totalVisits: summary.totalVisits,
-        uniqueIps: summary.uniqueIps,
-        records: summary.records,
-        updatedAt: nowIso,
-      });
-    }
-
-    const visitCount = await incrementVisitCount(kv);
-    const existingEntries = await loadVisitEntries(kv, nowIso);
-    const prunedEntries = pruneVisitEntries(existingEntries, nowMs);
-    const nextEntries = upsertVisitEntry(prunedEntries, request, nowIso);
-
-    await persistVisitEntries(kv, nextEntries);
-
-    return jsonResponse({
-      visitCount,
-    });
+    return jsonResponse({ error: 'Method not allowed' }, 405);
   } catch (err) {
     console.error(err);
     return jsonResponse(
