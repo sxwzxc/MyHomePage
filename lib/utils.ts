@@ -29,6 +29,8 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const host = getFunctionsHost();
   const method = init?.method ?? 'GET';
   const hasBody = typeof init?.body !== 'undefined';
+  const isFormDataBody =
+    typeof FormData !== 'undefined' && init?.body instanceof FormData;
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -39,7 +41,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
       signal: controller.signal,
       headers: {
         ...(init?.headers ?? {}),
-        ...(hasBody || method !== 'GET'
+        ...(!isFormDataBody && (hasBody || method !== 'GET')
           ? { 'content-type': 'application/json' }
           : {}),
       },
@@ -290,59 +292,31 @@ export async function saveHomepageConfig(
 }
 
 export async function uploadBackgroundImage(
-  imageFile: File,
+  imageData: string | File,
   fileName: string
 ): Promise<BackgroundImageUploadResponse> {
-  const host = getFunctionsHost();
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const body: BodyInit =
+    typeof imageData === 'string'
+      ? JSON.stringify({ imageDataUrl: imageData, fileName })
+      : (() => {
+          const formData = new FormData();
+          formData.append('file', imageData, fileName || imageData.name || 'background-image');
+          formData.append('fileName', fileName || imageData.name || 'background-image');
+          return formData;
+        })();
 
-  const formData = new FormData();
-  formData.append('image', imageFile, imageFile.name);
-  formData.append('fileName', fileName);
-
-  let res: Response;
-  try {
-    res = await fetch(`${host}/background-image`, {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
-  }
-
-  const rawText = await res.text();
-  let data: unknown = null;
-
-  if (rawText.trim()) {
-    try {
-      data = JSON.parse(rawText);
-    } catch {
-      throw new Error(
-        `服务返回了非 JSON 内容（${res.status}），请确认函数接口已正确部署。`
-      );
-    }
-  }
-
-  if (!res.ok) {
-    const msg =
-      data && typeof data === 'object' && 'error' in data
-        ? String((data as { error: unknown }).error)
-        : `上传失败（HTTP ${res.status}）`;
-    throw new Error(msg);
-  }
-
-  const typed = data as BackgroundImageUploadResponse | null;
-
-  if (!typed || typeof typed.imageUrl !== 'string' || !typed.imageUrl.trim()) {
+  const data = await requestJson<BackgroundImageUploadResponse>('/background-image', {
+    method: 'POST',
+    body,
+  });
+  if (!data || typeof data.imageUrl !== 'string' || !data.imageUrl.trim()) {
     throw new Error('背景图片上传成功，但返回数据缺少 imageUrl');
   }
 
   return {
-    imageUrl: typed.imageUrl,
-    updatedAt: typed.updatedAt,
-    byteLength: Number(typed.byteLength) || 0,
+    imageUrl: data.imageUrl,
+    updatedAt: data.updatedAt,
+    byteLength: Number(data.byteLength) || 0,
   };
 }
 

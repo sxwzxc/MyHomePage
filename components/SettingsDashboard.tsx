@@ -848,9 +848,9 @@ export default function SettingsDashboard() {
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 20 * 1024 * 1024) {
       setBackgroundUploadStatus('error');
-      setBackgroundUploadHint('图片过大，当前限制 10MB');
+      setBackgroundUploadHint('图片过大，当前限制 20MB');
       return;
     }
 
