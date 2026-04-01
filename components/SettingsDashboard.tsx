@@ -9,6 +9,7 @@ import {
   createBookmarkSettingsBackupPayload,
   parseBookmarkSettingsBackupPayload,
   HomepageConfig,
+  WeatherLocationMode,
   SearchEngine,
   BackgroundConfig,
   BookmarkLayoutMode,
@@ -85,6 +86,8 @@ export default function SettingsDashboard() {
   const [pageTitleInput, setPageTitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.pageTitle);
   const [pageSubtitleInput, setPageSubtitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.pageSubtitle);
   const [browserTitleInput, setBrowserTitleInput] = useState(DEFAULT_HOMEPAGE_CONFIG.browserTitle);
+  const [weatherLocationModeInput, setWeatherLocationModeInput] =
+    useState<WeatherLocationMode>(DEFAULT_HOMEPAGE_CONFIG.weatherLocationMode);
   const [cityInput, setCityInput] = useState(DEFAULT_HOMEPAGE_CONFIG.weatherCity);
   const [bookmarkLayoutModeInput, setBookmarkLayoutModeInput] = useState<BookmarkLayoutMode>(
     DEFAULT_HOMEPAGE_CONFIG.bookmarkLayoutMode
@@ -193,6 +196,7 @@ export default function SettingsDashboard() {
         setPageTitleInput(result.pageTitle);
         setPageSubtitleInput(result.pageSubtitle);
         setBrowserTitleInput(result.browserTitle);
+        setWeatherLocationModeInput(result.weatherLocationMode);
         setCityInput(result.weatherCity);
         setBookmarkLayoutModeInput(result.bookmarkLayoutMode);
         setBookmarkColumnsInput(result.bookmarkColumns);
@@ -260,9 +264,12 @@ export default function SettingsDashboard() {
   );
 
   const saveWeatherFields = () => {
+    const normalizedCity = cityInput.trim() || DEFAULT_HOMEPAGE_CONFIG.weatherCity;
+
     updateConfig((prev) => ({
       ...prev,
-      weatherCity: cityInput.trim() || prev.weatherCity,
+      weatherLocationMode: weatherLocationModeInput,
+      weatherCity: normalizedCity,
     }));
   };
 
@@ -737,12 +744,34 @@ export default function SettingsDashboard() {
             天气
           </h2>
           <div className="mt-3 grid gap-3 md:grid-cols-1">
+            <select
+              className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+              value={weatherLocationModeInput}
+              onChange={(event) =>
+                setWeatherLocationModeInput(
+                  event.target.value === 'auto' ? 'auto' : 'manual'
+                )
+              }
+            >
+              <option value="manual">手动指定天气城市</option>
+              <option value="auto">自动（根据当前位置）</option>
+            </select>
             <input
               className="rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
               value={cityInput}
               onChange={(event) => setCityInput(event.target.value)}
-              placeholder="天气城市，如 Shanghai"
+              disabled={weatherLocationModeInput === 'auto'}
+              placeholder={
+                weatherLocationModeInput === 'auto'
+                  ? '自动模式下由地理位置决定天气城市'
+                  : '天气城市，如 Shanghai'
+              }
             />
+            <p className="text-xs text-slate-300">
+              {weatherLocationModeInput === 'auto'
+                ? '自动模式会根据主页获取到的地理位置自动切换天气城市。'
+                : '手动模式将固定使用上面的城市获取天气。'}
+            </p>
           </div>
           <button
             className="mt-3 rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-900 transition hover:bg-cyan-400"

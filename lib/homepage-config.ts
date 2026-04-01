@@ -25,6 +25,8 @@ export type BackgroundConfig = {
 
 export type NewsSourceMode = 'auto' | 'manual';
 
+export type WeatherLocationMode = 'manual' | 'auto';
+
 export const NEWS_SOURCE_OPTIONS = [
   { id: 's60', label: '60s 读懂世界' },
   { id: 'toutiao', label: '头条热搜' },
@@ -59,6 +61,7 @@ export type HomepageConfig = {
   pageSubtitle: string;
   browserTitle: string;
   homepageConfigured: boolean;
+  weatherLocationMode: WeatherLocationMode;
   weatherCity: string;
   bookmarkLayoutMode: BookmarkLayoutMode;
   bookmarkColumns: number;
@@ -141,6 +144,7 @@ export const DEFAULT_HOMEPAGE_CONFIG: HomepageConfig = {
   pageSubtitle: '简洁高效的个人起始页',
   browserTitle: 'HomePage',
   homepageConfigured: false,
+  weatherLocationMode: 'manual',
   weatherCity: 'Shanghai',
   bookmarkLayoutMode: 'card',
   bookmarkColumns: 4,
@@ -543,6 +547,7 @@ export function normalizeHomepageConfig(value: unknown): HomepageConfig {
       typeof value.homepageConfigured === 'boolean'
         ? value.homepageConfigured
         : DEFAULT_HOMEPAGE_CONFIG.homepageConfigured,
+    weatherLocationMode: value.weatherLocationMode === 'auto' ? 'auto' : 'manual',
     weatherCity: asString(value.weatherCity, DEFAULT_HOMEPAGE_CONFIG.weatherCity),
     bookmarkLayoutMode: normalizeBookmarkLayoutMode(value.bookmarkLayoutMode),
     bookmarkColumns: normalizeBookmarkColumns(value.bookmarkColumns),

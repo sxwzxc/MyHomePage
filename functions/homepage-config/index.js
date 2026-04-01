@@ -21,6 +21,7 @@ const DEFAULT_CONFIG = {
   pageSubtitle: '简洁高效的个人起始页',
   browserTitle: 'HomePage',
   homepageConfigured: false,
+  weatherLocationMode: 'manual',
   weatherCity: 'Shanghai',
   bookmarkLayoutMode: 'card',
   bookmarkColumns: 4,
@@ -326,6 +327,7 @@ function normalizeConfig(value) {
       typeof value.homepageConfigured === 'boolean'
         ? value.homepageConfigured
         : DEFAULT_CONFIG.homepageConfigured,
+    weatherLocationMode: value.weatherLocationMode === 'auto' ? 'auto' : 'manual',
     weatherCity: asString(value.weatherCity, DEFAULT_CONFIG.weatherCity),
     bookmarkLayoutMode: normalizeBookmarkLayoutMode(value.bookmarkLayoutMode),
     bookmarkColumns: normalizeBookmarkColumns(value.bookmarkColumns),

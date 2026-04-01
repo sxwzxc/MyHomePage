@@ -107,6 +107,21 @@ function formatGeoTimezone(geo: Record<string, unknown>): string {
   return readGeoValue(geo, ['timezone', 'timeZone']);
 }
 
+function resolveWeatherCityFromGeo(geo: Record<string, unknown>): string {
+  return readGeoValue(geo, [
+    'city',
+    'cityName',
+    'district',
+    'districtName',
+    'region',
+    'regionName',
+    'province',
+    'state',
+    'country',
+    'countryName',
+  ]);
+}
+
 async function fetchWeatherByCity(city: string): Promise<WeatherInfo> {
   const geocodingRes = await fetch(
     `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(
@@ -247,6 +262,13 @@ export default function HomepageDashboard() {
     () => (geoInfo ? formatGeoTimezone(geoInfo) : ''),
     [geoInfo]
   );
+  const weatherCityToUse = useMemo(() => {
+    if (config.weatherLocationMode === 'auto') {
+      return geoInfo ? resolveWeatherCityFromGeo(geoInfo) : '';
+    }
+
+    return config.weatherCity.trim();
+  }, [config.weatherLocationMode, config.weatherCity, geoInfo]);
 
   const isCompactMode = config.bookmarkLayoutMode === 'compact';
   const totalBookmarkCards = config.bookmarks.length + 1;
@@ -387,13 +409,28 @@ export default function HomepageDashboard() {
     let cancelled = false;
 
     async function loadWeather() {
-      if (!config.weatherCity.trim()) {
+      const isAutoMode = config.weatherLocationMode === 'auto';
+
+      if (isAutoMode && geoLoading) {
         setWeather(null);
+        setWeatherError(null);
+        return;
+      }
+
+      if (!weatherCityToUse.trim()) {
+        setWeather(null);
+
+        if (isAutoMode) {
+          setWeatherError('未获取到可用位置，无法自动加载天气');
+        } else {
+          setWeatherError(null);
+        }
+
         return;
       }
 
       try {
-        const result = await fetchWeatherByCity(config.weatherCity.trim());
+        const result = await fetchWeatherByCity(weatherCityToUse.trim());
         if (!cancelled) {
           setWeather(result);
           setWeatherError(null);
@@ -411,7 +448,7 @@ export default function HomepageDashboard() {
     return () => {
       cancelled = true;
     };
-  }, [config.weatherCity]);
+  }, [config.weatherLocationMode, geoLoading, weatherCityToUse]);
 
   useEffect(() => {
     const nextTitle = config.browserTitle?.trim() || 'HomePage';
@@ -1037,13 +1074,6 @@ export default function HomepageDashboard() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2 text-xs text-white/95 sm:justify-end">
-              <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
-                {weather
-                  ? `🌤 ${weather.cityName} · ${weather.weatherText} · ${weather.temperature.toFixed(1)}°C`
-                  : weatherError
-                    ? `🌤 ${weatherError}`
-                    : '🌤 天气加载中...'}
-              </span>
               <div className="text-shadow-soft rounded-xl border border-white/20 bg-slate-950/60 px-3 py-1.5">
                 <p className="leading-tight">
                   {geoLoading ? '🌐 IP 获取中...' : geoIp ? `🌐 ${geoIp}` : '🌐 IP 不可用'}
@@ -1054,6 +1084,13 @@ export default function HomepageDashboard() {
                     : geoSummary
                       ? `📍 ${geoSummary}${geoTimezone ? `（${geoTimezone}）` : ''}`
                       : '📍 位置不可用'}
+                </p>
+                <p className="mt-0.5 leading-tight">
+                  {weather
+                    ? `🌤 ${weather.cityName} · ${weather.weatherText} · ${weather.temperature.toFixed(1)}°C`
+                    : weatherError
+                      ? `🌤 ${weatherError}`
+                      : '🌤 天气加载中...'}
                 </p>
               </div>
               <span className="text-shadow-soft rounded-full border border-white/20 bg-slate-950/60 px-3 py-1.5">
