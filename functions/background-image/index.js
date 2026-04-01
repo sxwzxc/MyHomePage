@@ -1,5 +1,11 @@
 const BACKGROUND_IMAGE_KEY = 'homepage:background:image:v1';
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+const BACKGROUND_IMAGE_CHUNK_PREFIX = `${BACKGROUND_IMAGE_KEY}:chunk:`;
+const BASE64_CHUNK_SIZE = 256 * 1024;
+
+function getChunkKey(index) {
+  return `${BACKGROUND_IMAGE_CHUNK_PREFIX}${index}`;
+}
 
 function getHeaders(extra = {}) {
   return {
@@ -83,6 +89,14 @@ function base64ByteLength(base64Data) {
   const cleaned = (base64Data || '').replace(/\s/g, '');
   const padding = cleaned.endsWith('==') ? 2 : cleaned.endsWith('=') ? 1 : 0;
   return Math.floor((cleaned.length * 3) / 4) - padding;
+}
+
+function splitIntoChunks(text, chunkSize) {
+  const chunks = [];
+  for (let i = 0; i < text.length; i += chunkSize) {
+    chunks.push(text.slice(i, i + chunkSize));
+  }
+  return chunks;
 }
 
 function encodeUint8ArrayToBase64(bytes) {
@@ -195,6 +209,73 @@ async function buildImagePayloadFromFormData(request) {
   };
 }
 
+async function readStoredBase64(kv, parsed) {
+  if (typeof parsed?.base64Data === 'string' && parsed.base64Data) {
+    return parsed.base64Data;
+  }
+
+  const chunkCountRaw = parsed?.chunkCount;
+  const chunkCount = Number(chunkCountRaw);
+  const isChunked = parsed?.chunked === true && Number.isInteger(chunkCount) && chunkCount > 0;
+
+  if (!isChunked) {
+    return '';
+  }
+
+  let base64Data = '';
+  for (let index = 0; index < chunkCount; index += 1) {
+    const chunk = await kv.get(getChunkKey(index));
+    if (typeof chunk !== 'string' || !chunk) {
+      throw new Error(`Missing image chunk at index ${index}`);
+    }
+    base64Data += chunk;
+  }
+
+  return base64Data;
+}
+
+async function writeImagePayloadToKv(kv, payload, updatedAt) {
+  let previousChunkCount = 0;
+  try {
+    const previousRaw = await kv.get(BACKGROUND_IMAGE_KEY);
+    if (previousRaw) {
+      const previousParsed = JSON.parse(previousRaw);
+      const count = Number(previousParsed?.chunkCount);
+      if (previousParsed?.chunked === true && Number.isInteger(count) && count > 0) {
+        previousChunkCount = count;
+      }
+    }
+  } catch {
+    // ignore previous metadata parse errors
+  }
+
+  const chunks = splitIntoChunks(payload.base64Data, BASE64_CHUNK_SIZE);
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    await kv.put(getChunkKey(index), chunks[index]);
+  }
+
+  await kv.put(
+    BACKGROUND_IMAGE_KEY,
+    JSON.stringify({
+      contentType: payload.contentType,
+      fileName: payload.fileName,
+      byteLength: payload.byteLength,
+      updatedAt,
+      chunked: true,
+      chunkCount: chunks.length,
+      chunkSize: BASE64_CHUNK_SIZE,
+      version: 2,
+    })
+  );
+
+  if (typeof kv.delete === 'function' && previousChunkCount > chunks.length) {
+    for (let index = chunks.length; index < previousChunkCount; index += 1) {
+      await kv.delete(getChunkKey(index));
+    }
+  }
+}
+
 async function handleGet(context) {
   const kv = getKvBinding(context?.env);
 
@@ -224,9 +305,19 @@ async function handleGet(context) {
   }
 
   const contentType = typeof parsed?.contentType === 'string' ? parsed.contentType : '';
-  const base64Data = typeof parsed?.base64Data === 'string' ? parsed.base64Data : '';
+  if (!contentType.startsWith('image/')) {
+    return jsonResponse({ error: 'Stored background image payload is incomplete' }, 500);
+  }
 
-  if (!contentType.startsWith('image/') || !base64Data) {
+  let base64Data = '';
+  try {
+    base64Data = await readStoredBase64(kv, parsed);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ error: `Failed to read stored background image: ${message}` }, 500);
+  }
+
+  if (!base64Data) {
     return jsonResponse({ error: 'Stored background image payload is incomplete' }, 500);
   }
 
@@ -293,16 +384,12 @@ async function handlePost(context) {
 
   const nowIso = new Date().toISOString();
 
-  await kv.put(
-    BACKGROUND_IMAGE_KEY,
-    JSON.stringify({
-      contentType: payload.contentType,
-      base64Data: payload.base64Data,
-      fileName: payload.fileName,
-      byteLength: payload.byteLength,
-      updatedAt: nowIso,
-    })
-  );
+  try {
+    await writeImagePayloadToKv(kv, payload, nowIso);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ error: `背景图片写入 KV 失败：${message}` }, 500);
+  }
 
   const cacheBustedUrl = `/background-image?v=${encodeURIComponent(nowIso)}`;
 
@@ -328,19 +415,24 @@ export async function onRequestPost(context) {
 }
 
 export async function onRequest(context) {
-  const method = context?.request?.method || 'UNKNOWN';
+  try {
+    const method = context?.request?.method || 'UNKNOWN';
 
-  if (method === 'OPTIONS') {
-    return onRequestOptions();
+    if (method === 'OPTIONS') {
+      return onRequestOptions();
+    }
+
+    if (method === 'GET') {
+      return onRequestGet(context);
+    }
+
+    if (method === 'POST') {
+      return onRequestPost(context);
+    }
+
+    return jsonResponse({ error: 'Method not allowed' }, 405);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return jsonResponse({ error: `Internal server error: ${message}` }, 500);
   }
-
-  if (method === 'GET') {
-    return onRequestGet(context);
-  }
-
-  if (method === 'POST') {
-    return onRequestPost(context);
-  }
-
-  return jsonResponse({ error: 'Method not allowed' }, 405);
 }
