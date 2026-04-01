@@ -29,6 +29,13 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const host = getFunctionsHost();
   const method = init?.method ?? 'GET';
   const hasBody = typeof init?.body !== 'undefined';
+  const hasFormDataBody =
+    typeof FormData !== 'undefined' && init?.body instanceof FormData;
+
+  const headers = new Headers(init?.headers ?? {});
+  if (hasBody && !hasFormDataBody && !headers.has('content-type')) {
+    headers.set('content-type', 'application/json');
+  }
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -37,12 +44,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
     const res = await fetch(`${host}${path}`, {
       ...init,
       signal: controller.signal,
-      headers: {
-        ...(init?.headers ?? {}),
-        ...(hasBody || method !== 'GET'
-          ? { 'content-type': 'application/json' }
-          : {}),
-      },
+      headers,
     });
 
     const rawText = await res.text();
@@ -290,13 +292,24 @@ export async function saveHomepageConfig(
 }
 
 export async function uploadBackgroundImage(
-  imageDataUrl: string,
+  imageDataOrFile: string | File,
   fileName: string
 ): Promise<BackgroundImageUploadResponse> {
-  const data = await requestJson<BackgroundImageUploadResponse>('/background-image', {
-    method: 'POST',
-    body: JSON.stringify({ imageDataUrl, fileName }),
-  });
+  const isFileBody = typeof File !== 'undefined' && imageDataOrFile instanceof File;
+
+  const data = isFileBody
+    ? await requestJson<BackgroundImageUploadResponse>('/background-image', {
+        method: 'POST',
+        body: (() => {
+          const formData = new FormData();
+          formData.append('file', imageDataOrFile, fileName || imageDataOrFile.name);
+          return formData;
+        })(),
+      })
+    : await requestJson<BackgroundImageUploadResponse>('/background-image', {
+        method: 'POST',
+        body: JSON.stringify({ imageDataUrl: imageDataOrFile, fileName }),
+      });
 
   if (!data || typeof data.imageUrl !== 'string' || !data.imageUrl.trim()) {
     throw new Error('背景图片上传成功，但返回数据缺少 imageUrl');

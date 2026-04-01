@@ -1,5 +1,5 @@
 const BACKGROUND_IMAGE_KEY = 'homepage:background:image:v1';
-const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 function getHeaders(extra = {}) {
   return {
@@ -85,6 +85,116 @@ function base64ByteLength(base64Data) {
   return Math.floor((cleaned.length * 3) / 4) - padding;
 }
 
+function encodeUint8ArrayToBase64(bytes) {
+  let binary = '';
+  const chunkSize = 0x8000;
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+
+  return btoa(binary);
+}
+
+function buildImagePayloadFromJson(body) {
+  const imageDataUrl = typeof body?.imageDataUrl === 'string' ? body.imageDataUrl : '';
+  const fileName = typeof body?.fileName === 'string' ? body.fileName : '';
+
+  const parsed = parseImageDataUrl(imageDataUrl);
+  if (!parsed) {
+    return {
+      ok: false,
+      error: 'imageDataUrl must be a valid image data URL',
+      status: 400,
+    };
+  }
+
+  const byteLength = base64ByteLength(parsed.base64Data);
+  if (byteLength <= 0) {
+    return {
+      ok: false,
+      error: 'Uploaded image is empty',
+      status: 400,
+    };
+  }
+
+  return {
+    ok: true,
+    contentType: parsed.contentType,
+    base64Data: parsed.base64Data,
+    fileName,
+    byteLength,
+  };
+}
+
+async function buildImagePayloadFromFormData(request) {
+  let formData;
+  try {
+    formData = await request.formData();
+  } catch {
+    return {
+      ok: false,
+      error: 'Invalid form data body',
+      status: 400,
+    };
+  }
+
+  const file = formData.get('file') || formData.get('image');
+  if (!file || typeof file === 'string') {
+    return {
+      ok: false,
+      error: 'file must be an uploaded image file',
+      status: 400,
+    };
+  }
+
+  const contentType = typeof file.type === 'string' ? file.type.toLowerCase() : '';
+  if (!contentType.startsWith('image/')) {
+    return {
+      ok: false,
+      error: '仅支持图片文件上传',
+      status: 400,
+    };
+  }
+
+  let bytes;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } catch {
+    return {
+      ok: false,
+      error: '读取上传文件失败',
+      status: 400,
+    };
+  }
+
+  const byteLength = bytes.byteLength;
+  if (byteLength <= 0) {
+    return {
+      ok: false,
+      error: 'Uploaded image is empty',
+      status: 400,
+    };
+  }
+
+  const explicitName = formData.get('fileName');
+  const fileName =
+    typeof explicitName === 'string' && explicitName.trim()
+      ? explicitName.trim()
+      : typeof file.name === 'string'
+        ? file.name
+        : '';
+
+  return {
+    ok: true,
+    contentType,
+    base64Data: encodeUint8ArrayToBase64(bytes),
+    fileName,
+    byteLength,
+  };
+}
+
 async function handleGet(context) {
   const kv = getKvBinding(context?.env);
 
@@ -148,27 +258,31 @@ async function handlePost(context) {
     );
   }
 
-  let body;
-  try {
-    body = await context.request.json();
-  } catch {
-    return jsonResponse({ error: 'Invalid JSON body' }, 400);
+  const request = context.request;
+  const requestContentType = (request.headers.get('content-type') || '').toLowerCase();
+
+  const payload = requestContentType.includes('multipart/form-data')
+    ? await buildImagePayloadFromFormData(request)
+    : await (async () => {
+        let body;
+        try {
+          body = await request.json();
+        } catch {
+          return {
+            ok: false,
+            error: 'Invalid JSON body',
+            status: 400,
+          };
+        }
+
+        return buildImagePayloadFromJson(body);
+      })();
+
+  if (!payload.ok) {
+    return jsonResponse({ error: payload.error }, payload.status);
   }
 
-  const imageDataUrl = typeof body?.imageDataUrl === 'string' ? body.imageDataUrl : '';
-  const fileName = typeof body?.fileName === 'string' ? body.fileName : '';
-
-  const parsed = parseImageDataUrl(imageDataUrl);
-  if (!parsed) {
-    return jsonResponse({ error: 'imageDataUrl must be a valid image data URL' }, 400);
-  }
-
-  const byteLength = base64ByteLength(parsed.base64Data);
-  if (byteLength <= 0) {
-    return jsonResponse({ error: 'Uploaded image is empty' }, 400);
-  }
-
-  if (byteLength > MAX_IMAGE_BYTES) {
+  if (payload.byteLength > MAX_IMAGE_BYTES) {
     return jsonResponse(
       {
         error: `图片过大，当前限制 ${Math.floor(MAX_IMAGE_BYTES / (1024 * 1024))}MB`,
@@ -182,10 +296,10 @@ async function handlePost(context) {
   await kv.put(
     BACKGROUND_IMAGE_KEY,
     JSON.stringify({
-      contentType: parsed.contentType,
-      base64Data: parsed.base64Data,
-      fileName,
-      byteLength,
+      contentType: payload.contentType,
+      base64Data: payload.base64Data,
+      fileName: payload.fileName,
+      byteLength: payload.byteLength,
       updatedAt: nowIso,
     })
   );
@@ -195,7 +309,7 @@ async function handlePost(context) {
   return jsonResponse({
     imageUrl: cacheBustedUrl,
     updatedAt: nowIso,
-    byteLength,
+    byteLength: payload.byteLength,
   });
 }
 

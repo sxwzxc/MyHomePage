@@ -60,6 +60,9 @@ const SETTINGS_TABS: Array<{ id: SettingsTabId; label: string; description: stri
   { id: 'resources', label: '搜索与书签', description: '搜索引擎与书签管理' },
 ];
 
+const MAX_BACKGROUND_UPLOAD_BYTES = 20 * 1024 * 1024;
+const MAX_BACKGROUND_UPLOAD_MB = Math.floor(MAX_BACKGROUND_UPLOAD_BYTES / (1024 * 1024));
+
 function createId(prefix: string): string {
   const random = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now()}_${random}`;
@@ -848,9 +851,9 @@ export default function SettingsDashboard() {
       return;
     }
 
-    if (file.size > 4 * 1024 * 1024) {
+    if (file.size > MAX_BACKGROUND_UPLOAD_BYTES) {
       setBackgroundUploadStatus('error');
-      setBackgroundUploadHint('图片过大，当前限制 4MB');
+      setBackgroundUploadHint(`图片过大，当前限制 ${MAX_BACKGROUND_UPLOAD_MB}MB`);
       return;
     }
 
@@ -858,22 +861,7 @@ export default function SettingsDashboard() {
     setBackgroundUploadHint(`正在上传：${file.name}`);
 
     try {
-      const imageDataUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result;
-          if (typeof result === 'string') {
-            resolve(result);
-            return;
-          }
-
-          reject(new Error('读取图片失败'));
-        };
-        reader.onerror = () => reject(new Error('读取图片失败'));
-        reader.readAsDataURL(file);
-      });
-
-      const uploaded = await uploadBackgroundImage(imageDataUrl, file.name);
+      const uploaded = await uploadBackgroundImage(file, file.name);
 
       updateConfig((prev) => ({
         ...prev,
@@ -1307,7 +1295,7 @@ export default function SettingsDashboard() {
                   ) : (
                     <Upload className="h-4 w-4" />
                   )}
-                  上传本地图片（存储到 KV）
+                  上传本地图片（存储到 KV，最大 20MB）
                 </button>
                 {backgroundUploadHint ? (
                   <span
