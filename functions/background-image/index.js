@@ -749,7 +749,7 @@ async function handleGet(context) {
         status: 200,
         headers: getHeaders({
           'content-type': contentType,
-          'cache-control': 'public, max-age=60',
+          'cache-control': 'public, max-age=31536000, immutable',
         }),
       });
     } catch (error) {
@@ -777,7 +777,7 @@ async function handleGet(context) {
       status: 200,
       headers: getHeaders({
         'content-type': contentType,
-        'cache-control': 'public, max-age=60',
+        'cache-control': 'public, max-age=31536000, immutable',
       }),
     });
   } catch {

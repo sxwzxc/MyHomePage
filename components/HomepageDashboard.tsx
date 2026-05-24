@@ -12,6 +12,8 @@ import {
   MoreVertical,
   Loader2,
   X,
+  Lock,
+  LockOpen,
 } from 'lucide-react';
 import { Bookmark, HomepageConfig, DEFAULT_HOMEPAGE_CONFIG } from '@/lib/homepage-config';
 import {
@@ -22,7 +24,7 @@ import {
   fetchBookmarkFavicon,
   verifyUnlockPassword,
 } from '@/lib/utils';
-import { isSettingsUnlocked, saveSettingsUnlock } from '@/lib/unlock-state';
+import { isSettingsUnlocked, saveSettingsUnlock, clearSettingsUnlock } from '@/lib/unlock-state';
 import ContextMenu from '@/components/ui/context-menu';
 import AnimatedBackground from '@/components/AnimatedBackground';
 import AnalogClock from '@/components/AnalogClock';
@@ -243,7 +245,6 @@ export default function HomepageDashboard() {
   const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
   const configRef = useRef(config);
   const autoFaviconRefreshRunningRef = useRef(false);
-  const pendingUnlockActionRef = useRef<null | (() => void)>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const quickSearchKeywords = ['AI 工具', '天气预报', '开源趋势', '美食推荐'];
 
@@ -540,21 +541,11 @@ export default function HomepageDashboard() {
     setConfig(saved);
   };
 
-  const openUnlockModal = (reason: string, actionAfterUnlock?: () => void) => {
+  const openUnlockModal = (reason: string) => {
     setUnlockReason(reason);
     setUnlockPasswordInput('');
     setUnlockError(null);
-    pendingUnlockActionRef.current = actionAfterUnlock || null;
     setShowUnlockModal(true);
-  };
-
-  const ensureUnlocked = (reason: string, actionAfterUnlock?: () => void) => {
-    if (isUnlocked) {
-      return true;
-    }
-
-    openUnlockModal(reason, actionAfterUnlock);
-    return false;
   };
 
   const handleUnlockSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -582,13 +573,6 @@ export default function HomepageDashboard() {
     saveSettingsUnlock();
     setIsUnlocked(true);
     setShowUnlockModal(false);
-
-    const pendingAction = pendingUnlockActionRef.current;
-    pendingUnlockActionRef.current = null;
-
-    if (pendingAction) {
-      pendingAction();
-    }
   };
 
   const handleSetHomepage = async () => {
@@ -670,7 +654,7 @@ export default function HomepageDashboard() {
   ) => {
     event.preventDefault();
 
-    if (!ensureUnlocked('解锁后可编辑或删除书签')) {
+    if (!isUnlocked) {
       return;
     }
 
@@ -684,7 +668,7 @@ export default function HomepageDashboard() {
     event.preventDefault();
     event.stopPropagation();
 
-    if (!ensureUnlocked('解锁后可编辑或删除书签')) {
+    if (!isUnlocked) {
       return;
     }
 
@@ -693,7 +677,7 @@ export default function HomepageDashboard() {
   };
 
   const handleEditBookmark = (bookmark: Bookmark) => {
-    if (!ensureUnlocked('解锁后可编辑书签')) {
+    if (!isUnlocked) {
       return;
     }
 
@@ -780,7 +764,7 @@ export default function HomepageDashboard() {
   };
 
   const handleDeleteBookmark = async (bookmark: Bookmark) => {
-    if (!ensureUnlocked('解锁后可删除书签')) {
+    if (!isUnlocked) {
       return;
     }
 
@@ -808,7 +792,7 @@ export default function HomepageDashboard() {
       return;
     }
 
-    if (!ensureUnlocked('解锁后可添加书签')) {
+    if (!isUnlocked) {
       return;
     }
 
@@ -927,21 +911,18 @@ export default function HomepageDashboard() {
   };
 
   const handleSettingsClick = () => {
-    if (isUnlocked) {
-      router.push('/settings');
+    if (!isUnlocked) {
       return;
     }
 
-    openUnlockModal('请输入密码后进入设置页', () => {
-      router.push('/settings');
-    });
+    router.push('/settings');
   };
 
   const handleBookmarkDragStart = (
     event: React.DragEvent<HTMLDivElement>,
     bookmarkId: string
   ) => {
-    if (!ensureUnlocked('解锁后可拖拽排序书签')) {
+    if (!isUnlocked) {
       event.preventDefault();
       return;
     }
@@ -1047,6 +1028,30 @@ export default function HomepageDashboard() {
             {isSettingHomepage ? '设置中...' : '设为主页'}
           </button>
         ) : null}
+
+        <button
+          type="button"
+          onClick={() => {
+            if (isUnlocked) {
+              clearSettingsUnlock();
+              setIsUnlocked(false);
+            } else {
+              openUnlockModal('请输入密码以解锁编辑功能');
+            }
+          }}
+          className={`rounded-xl border p-2 shadow-lg backdrop-blur transition ${
+            isUnlocked
+              ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200 hover:border-cyan-400 hover:bg-cyan-500/30'
+              : 'border-white/20 bg-slate-950/70 text-white hover:border-white/60 hover:bg-slate-900/80'
+          }`}
+          title={isUnlocked ? '已解锁，点击锁定' : '点击解锁编辑'}
+        >
+          {isUnlocked ? (
+            <LockOpen className="h-5 w-5" />
+          ) : (
+            <Lock className="h-5 w-5" />
+          )}
+        </button>
 
         <button
           type="button"
@@ -1260,14 +1265,16 @@ export default function HomepageDashboard() {
                   </div>
                 </a>
 
-                <button
-                  type="button"
-                  className="absolute right-2 top-2 rounded-md p-1 text-white/60 opacity-0 transition hover:bg-white/10 hover:text-white group-hover:opacity-100"
-                  onClick={(event) => handleBookmarkMenuButtonClick(event, bookmark)}
-                  aria-label="打开书签菜单"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </button>
+                {isUnlocked ? (
+                  <button
+                    type="button"
+                    className="absolute right-2 top-2 rounded-md p-1 text-white/60 opacity-0 transition hover:bg-white/10 hover:text-white group-hover:opacity-100"
+                    onClick={(event) => handleBookmarkMenuButtonClick(event, bookmark)}
+                    aria-label="打开书签菜单"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </button>
+                ) : null}
               </div>
             ))}
 
@@ -1318,13 +1325,9 @@ export default function HomepageDashboard() {
                   </div>
                 </form>
               </div>
-            ) : (
+            ) : isUnlocked ? (
               <button
                 onClick={() => {
-                  if (!ensureUnlocked('解锁后可添加书签')) {
-                    return;
-                  }
-
                   setShowQuickAdd(true);
                 }}
                 className={`group rounded-xl border border-dashed border-white/35 bg-slate-950/45 transition hover:border-white/65 hover:bg-slate-900/65 ${
@@ -1341,7 +1344,7 @@ export default function HomepageDashboard() {
                   <p className={`text-white/75 ${bookmarkMetaClass}`}>快速添加新书签</p>
                 </div>
               </button>
-            )}
+            ) : null}
           </div>
         </article>
 
@@ -1488,7 +1491,6 @@ export default function HomepageDashboard() {
                       return;
                     }
                     setShowUnlockModal(false);
-                    pendingUnlockActionRef.current = null;
                   }}
                   className="rounded-md p-1 text-slate-400 transition hover:bg-white/10 hover:text-slate-100"
                   aria-label="关闭密码弹窗"
@@ -1520,7 +1522,6 @@ export default function HomepageDashboard() {
                         return;
                       }
                       setShowUnlockModal(false);
-                      pendingUnlockActionRef.current = null;
                     }}
                     className="rounded-lg bg-white/10 px-3 py-2 text-sm text-slate-100 transition hover:bg-white/20"
                   >

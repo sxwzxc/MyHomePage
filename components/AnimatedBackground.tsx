@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useRef, useState } from 'react';
 import { BackgroundConfig } from '@/lib/homepage-config';
 
 const ORB_LAYOUTS = [
@@ -124,13 +125,83 @@ interface AnimatedBackgroundProps {
 }
 
 export default function AnimatedBackground({ config }: AnimatedBackgroundProps) {
+  const [cachedImageUrl, setCachedImageUrl] = useState<string | null>(null);
+  const prevRemoteUrlRef = useRef<string>('');
+  const cachedBlobUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (config.type !== 'image' || !config.imageUrl) {
+      // Revoke old blob URL when switching away from image mode
+      if (cachedBlobUrlRef.current) {
+        URL.revokeObjectURL(cachedBlobUrlRef.current);
+        cachedBlobUrlRef.current = null;
+      }
+      setCachedImageUrl(null);
+      prevRemoteUrlRef.current = '';
+      return;
+    }
+
+    const remoteUrl = config.imageUrl;
+
+    // Skip if the URL hasn't changed and we have a cached blob
+    if (prevRemoteUrlRef.current === remoteUrl && cachedBlobUrlRef.current) {
+      return;
+    }
+
+    prevRemoteUrlRef.current = remoteUrl;
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch(remoteUrl);
+        if (cancelled || !response.ok) {
+          return;
+        }
+
+        const blob = await response.blob();
+        if (cancelled) {
+          return;
+        }
+
+        const blobUrl = URL.createObjectURL(blob);
+
+        // Revoke the previous blob URL before replacing
+        if (cachedBlobUrlRef.current) {
+          URL.revokeObjectURL(cachedBlobUrlRef.current);
+        }
+
+        cachedBlobUrlRef.current = blobUrl;
+        setCachedImageUrl(blobUrl);
+      } catch {
+        // Fallback to the original URL — nothing to do here
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [config.type, config.imageUrl]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Cleanup blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (cachedBlobUrlRef.current) {
+        URL.revokeObjectURL(cachedBlobUrlRef.current);
+        cachedBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  const displayImageUrl = cachedImageUrl || config.imageUrl;
+
   if (config.type === 'image' && config.imageUrl) {
     return (
       <>
         <div
           className="fixed inset-0 -z-10 bg-cover bg-center bg-no-repeat transition-opacity duration-500"
           style={{
-            backgroundImage: `url(${config.imageUrl})`,
+            backgroundImage: `url(${displayImageUrl})`,
             filter: `blur(${config.imageBlur || 0}px)`,
           }}
         />
