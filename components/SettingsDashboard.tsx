@@ -1420,109 +1420,121 @@ export default function SettingsDashboard() {
               在主页显示全球热点新闻
             </label>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
-              <div>
-                <label className="mb-1 block text-xs text-slate-300">来源模式</label>
-                <select
-                  className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none focus:border-cyan-400"
-                  value={config.news.sourceMode}
+            <div className="mt-3 space-y-3">
+              <label className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-slate-900/60 px-3 py-2 text-xs text-slate-200">
+                <input
+                  type="checkbox"
+                  checked={config.news.sourceMode === 'auto'}
                   onChange={(event) => {
-                    const sourceMode =
-                      event.target.value === 'manual' ? 'manual' : 'auto';
-                    updateConfig((prev) => ({
-                      ...prev,
-                      news: {
-                        ...prev.news,
-                        sourceMode,
-                        sourceId: prev.news.enabledSourceIds.includes(prev.news.sourceId)
+                    const isAuto = event.target.checked;
+                    updateConfig((prev) => {
+                      // When switching to manual, ensure sourceId is valid
+                      const nextSourceId = isAuto
+                        ? prev.news.sourceId
+                        : prev.news.enabledSourceIds.includes(prev.news.sourceId)
                           ? prev.news.sourceId
-                          : (prev.news.enabledSourceIds[0] as NewsSourceId),
-                      },
-                    }));
+                          : (prev.news.enabledSourceIds[0] as NewsSourceId);
+                      return {
+                        ...prev,
+                        news: {
+                          ...prev.news,
+                          sourceMode: isAuto ? 'auto' : 'manual',
+                          sourceId: nextSourceId,
+                        },
+                      };
+                    });
                   }}
-                >
-                  <option value="auto">自动轮播已勾选来源</option>
-                  <option value="manual">手动指定来源</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs text-slate-300">手动来源</label>
-                <select
-                  className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none focus:border-cyan-400 disabled:opacity-60"
-                  value={config.news.sourceId}
-                  disabled={config.news.sourceMode !== 'manual'}
-                  onChange={(event) => {
-                    const sourceId = event.target.value;
-                    updateConfig((prev) => ({
-                      ...prev,
-                      news: {
-                        ...prev.news,
-                        sourceId: prev.news.enabledSourceIds.some((item) => item === sourceId)
-                          ? (sourceId as typeof prev.news.sourceId)
-                          : prev.news.sourceId,
-                      },
-                    }));
-                  }}
-                >
-                  {enabledNewsSourceOptions.map((source) => (
-                    <option key={source.id} value={source.id}>
-                      {source.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="mb-1 block text-xs text-slate-300">
-                  自动切换间隔（秒）: {newsAutoSwitchSecondsInput}
-                </label>
-                <input
-                  type="range"
-                  min="5"
-                  max="120"
-                  value={newsAutoSwitchSecondsInput}
-                  onChange={(event) => {
-                    const nextSeconds = Math.max(5, Math.min(120, Number(event.target.value)));
-                    setNewsAutoSwitchSecondsInput(nextSeconds);
-                  }}
-                  onPointerUp={commitNewsAutoSwitchSeconds}
-                  onKeyUp={(event) => {
-                    if (shouldCommitRangeOnKeyUp(event)) {
-                      commitNewsAutoSwitchSeconds();
-                    }
-                  }}
-                  className="slider-thumb"
-                  style={getRangeProgressStyle(newsAutoSwitchSecondsInput, 5, 120)}
                 />
+                自动轮播（在下方勾选的来源之间自动切换）
+              </label>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                {config.news.sourceMode === 'manual' ? (
+                  <div>
+                    <label className="mb-1 block text-xs text-slate-300">手动指定来源</label>
+                    <select
+                      className="w-full rounded-lg border border-white/20 bg-slate-900/70 px-3 py-2 text-sm outline-none transition focus:border-cyan-400"
+                      value={config.news.sourceId}
+                      onChange={(event) => {
+                        const sourceId = event.target.value;
+                        updateConfig((prev) => ({
+                          ...prev,
+                          news: {
+                            ...prev.news,
+                            sourceId: prev.news.enabledSourceIds.some((item) => item === sourceId)
+                              ? (sourceId as typeof prev.news.sourceId)
+                              : prev.news.sourceId,
+                          },
+                        }));
+                      }}
+                    >
+                      {enabledNewsSourceOptions.map((source) => (
+                        <option key={source.id} value={source.id}>
+                          {source.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div />
+                )}
+
+                <div>
+                  <label className="mb-1 block text-xs text-slate-300">
+                    自动切换间隔（秒）: {newsAutoSwitchSecondsInput}
+                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="120"
+                    value={newsAutoSwitchSecondsInput}
+                    onChange={(event) => {
+                      const nextSeconds = Math.max(5, Math.min(120, Number(event.target.value)));
+                      setNewsAutoSwitchSecondsInput(nextSeconds);
+                    }}
+                    onPointerUp={commitNewsAutoSwitchSeconds}
+                    onKeyUp={(event) => {
+                      if (shouldCommitRangeOnKeyUp(event)) {
+                        commitNewsAutoSwitchSeconds();
+                      }
+                    }}
+                    className="slider-thumb"
+                    style={getRangeProgressStyle(newsAutoSwitchSecondsInput, 5, 120)}
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs text-slate-300">
+                    展示条数: {newsLimitInput}
+                  </label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="30"
+                    value={newsLimitInput}
+                    onChange={(event) => {
+                      const nextLimit = Math.max(5, Math.min(30, Number(event.target.value)));
+                      setNewsLimitInput(nextLimit);
+                    }}
+                    onPointerUp={commitNewsLimit}
+                    onKeyUp={(event) => {
+                      if (shouldCommitRangeOnKeyUp(event)) {
+                        commitNewsLimit();
+                      }
+                    }}
+                    className="slider-thumb"
+                    style={getRangeProgressStyle(newsLimitInput, 5, 30)}
+                  />
+                </div>
               </div>
 
-              <div>
-                <label className="mb-1 block text-xs text-slate-300">
-                  展示条数: {newsLimitInput}
-                </label>
-                <input
-                  type="range"
-                  min="5"
-                  max="30"
-                  value={newsLimitInput}
-                  onChange={(event) => {
-                    const nextLimit = Math.max(5, Math.min(30, Number(event.target.value)));
-                    setNewsLimitInput(nextLimit);
-                  }}
-                  onPointerUp={commitNewsLimit}
-                  onKeyUp={(event) => {
-                    if (shouldCommitRangeOnKeyUp(event)) {
-                      commitNewsLimit();
-                    }
-                  }}
-                  className="slider-thumb"
-                  style={getRangeProgressStyle(newsLimitInput, 5, 30)}
-                />
-              </div>
+              <p className="text-xs text-slate-400">
+                滑杆拖动结束后自动保存，拖动过程只更新本地显示。
+                {config.news.sourceMode === 'auto'
+                  ? ' 自动模式下将在已勾选来源间按设定的间隔轮播。'
+                  : ' 手动模式下固定展示上方指定的单一来源。'}
+              </p>
             </div>
-
-            <p className="mt-2 text-xs text-slate-400">滑杆拖动结束后自动保存，拖动过程只更新本地显示。</p>
 
             <div className="mt-3">
               <label className="mb-2 block text-xs text-slate-300">显示来源（默认全选）</label>
@@ -1581,7 +1593,7 @@ export default function SettingsDashboard() {
 
             <div className="mt-3">
               <label className="mb-2 block text-xs text-slate-300">
-                来源排序（自动模式与展示顺序）
+                来源排序（自动轮播与展示顺序）
               </label>
               <div className="space-y-2">
                 {orderedNewsSourceOptions.map((source, index) => (
@@ -1692,7 +1704,8 @@ export default function SettingsDashboard() {
             </div>
 
             <p className="text-shadow-soft mt-2 text-xs text-white/85">
-              自动模式会在你勾选的来源之间轮播；可通过“自动切换间隔”控制轮播速度。
+              勾选「自动轮播」后，主页会在已勾选的来源之间按设定间隔自动切换展示。
+              取消勾选则可手动固定展示单一来源。
             </p>
           </div>
         </article>

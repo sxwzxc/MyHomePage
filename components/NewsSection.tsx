@@ -547,7 +547,7 @@ export default function NewsSection({
 
   const sourceDisplayName =
     sourceMode === 'auto'
-      ? `自动（当前：${activeSourceLabel}）`
+      ? activeSourceLabel
       : visibleSourceOptions.find((item) => item.id === sourceId)?.label || activeSourceLabel;
 
   return (
@@ -590,39 +590,44 @@ export default function NewsSection({
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
-                <button
-                  type="button"
-                  onClick={() => onConfigChangeRef.current({ sourceMode: 'auto' })}
-                  className={`rounded-lg px-3 py-1 text-xs transition ${
-                    sourceMode === 'auto'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-white/80 hover:bg-white/10'
-                  }`}
-                >
-                  自动
-                </button>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 transition hover:bg-white/10">
+                <input
+                  type="checkbox"
+                  checked={sourceMode === 'auto'}
+                  onChange={(event) => {
+                    const isAuto = event.target.checked;
+                    onConfigChangeRef.current({
+                      sourceMode: isAuto ? 'auto' : 'manual',
+                      ...(isAuto
+                        ? {}
+                        : {
+                            sourceId:
+                              visibleSourceOptions[0]?.id || sourceId,
+                          }),
+                    });
+                  }}
+                />
+                自动轮播
+              </label>
 
-                {visibleSourceOptions.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() =>
-                      onConfigChangeRef.current({
-                        sourceMode: 'manual',
-                        sourceId: option.id,
-                      })
-                    }
-                    className={`rounded-lg px-3 py-1 text-xs transition ${
-                      sourceMode === 'manual' && sourceId === option.id
-                        ? 'bg-white text-slate-900 shadow-sm'
-                        : 'text-white/80 hover:bg-white/10'
-                    }`}
-                  >
-                    {option.label.replace('热搜', '')}
-                  </button>
-                ))}
-              </div>
+              {sourceMode === 'manual' && visibleSourceOptions.length > 0 ? (
+                <select
+                  value={sourceId}
+                  onChange={(event) =>
+                    onConfigChangeRef.current({
+                      sourceMode: 'manual',
+                      sourceId: event.target.value as NewsSourceId,
+                    })
+                  }
+                  className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/80 outline-none transition hover:bg-white/10 focus:border-cyan-400"
+                >
+                  {visibleSourceOptions.map((option) => (
+                    <option key={option.id} value={option.id} className="bg-slate-900 text-white">
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
 
               <span className="rounded-xl border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/80">
                 来源：{sourceDisplayName}
