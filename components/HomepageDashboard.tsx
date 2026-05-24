@@ -243,6 +243,7 @@ export default function HomepageDashboard() {
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [isFetchingEditIcon, setIsFetchingEditIcon] = useState(false);
   const [draggingBookmarkId, setDraggingBookmarkId] = useState<string | null>(null);
+  const draggingBookmarkIdRef = useRef<string | null>(null);
   const configRef = useRef(config);
   const autoFaviconRefreshRunningRef = useRef(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -927,6 +928,7 @@ export default function HomepageDashboard() {
       return;
     }
 
+    draggingBookmarkIdRef.current = bookmarkId;
     setDraggingBookmarkId(bookmarkId);
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', bookmarkId);
@@ -936,7 +938,7 @@ export default function HomepageDashboard() {
     event: React.DragEvent<HTMLDivElement>,
     bookmarkId: string
   ) => {
-    if (!isUnlocked || !draggingBookmarkId || draggingBookmarkId === bookmarkId) {
+    if (!isUnlocked || !draggingBookmarkIdRef.current || draggingBookmarkIdRef.current === bookmarkId) {
       return;
     }
 
@@ -946,6 +948,7 @@ export default function HomepageDashboard() {
 
   const handleBookmarkDragEnd = () => {
     setDraggingBookmarkId(null);
+    draggingBookmarkIdRef.current = null;
   };
 
   const handleBookmarkDrop = async (
@@ -954,16 +957,19 @@ export default function HomepageDashboard() {
   ) => {
     event.preventDefault();
 
-    if (!isUnlocked || !draggingBookmarkId || draggingBookmarkId === targetBookmarkId) {
+    const sourceId = draggingBookmarkIdRef.current;
+    if (!isUnlocked || !sourceId || sourceId === targetBookmarkId) {
       setDraggingBookmarkId(null);
+      draggingBookmarkIdRef.current = null;
       return;
     }
 
-    const fromIndex = config.bookmarks.findIndex((item) => item.id === draggingBookmarkId);
+    const fromIndex = config.bookmarks.findIndex((item) => item.id === sourceId);
     const toIndex = config.bookmarks.findIndex((item) => item.id === targetBookmarkId);
 
     if (fromIndex < 0 || toIndex < 0) {
       setDraggingBookmarkId(null);
+      draggingBookmarkIdRef.current = null;
       return;
     }
 
@@ -980,6 +986,7 @@ export default function HomepageDashboard() {
 
     setConfig(nextConfig);
     setDraggingBookmarkId(null);
+    draggingBookmarkIdRef.current = null;
 
     try {
       const saved = await saveHomepageConfig(nextConfig);
