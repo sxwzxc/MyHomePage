@@ -1251,6 +1251,7 @@ export default function HomepageDashboard() {
                   href={bookmark.url}
                   target="_blank"
                   rel="noopener noreferrer"
+                  draggable={false}
                   className={isCompactMode ? 'flex items-center gap-3' : 'block'}
                 >
                   <div
