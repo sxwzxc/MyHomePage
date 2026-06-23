@@ -29,6 +29,7 @@ import ContextMenu from '@/components/ui/context-menu';
 import AnimatedBackground from '@/components/AnimatedBackground';
 import AnalogClock from '@/components/AnalogClock';
 import NewsSection from '@/components/NewsSection';
+import BookmarkAvatar, { isCustomIconBookmark } from '@/components/BookmarkAvatar';
 
 type WeatherInfo = {
   cityName: string;
@@ -43,15 +44,6 @@ type BookmarkEditFormState = {
   icon: string;
   isCustomIcon: boolean;
 };
-
-function isCustomIconBookmark(bookmark: Bookmark): boolean {
-  if (bookmark.isCustomIcon) {
-    return true;
-  }
-
-  const icon = bookmark.icon?.trim() || '';
-  return Boolean(icon && !icon.startsWith('http') && !icon.startsWith('data:'));
-}
 
 function weatherCodeToText(code: number): string {
   const map: Record<number, string> = {
@@ -172,27 +164,6 @@ async function fetchWeatherByCity(city: string): Promise<WeatherInfo> {
     temperature: Number(weatherData.current.temperature_2m ?? 0),
     weatherText: weatherCodeToText(Number(weatherData.current.weather_code ?? 0)),
   };
-}
-
-function BookmarkAvatar({ bookmark }: { bookmark: Bookmark }) {
-  const icon = bookmark.icon?.trim() || '';
-
-  if (!icon) {
-    return (
-      <span className="text-xl font-bold text-white/90">
-        {bookmark.title.slice(0, 1).toUpperCase()}
-      </span>
-    );
-  }
-
-  if (!icon.startsWith('http') && !icon.startsWith('data:')) {
-    return <span className="text-2xl">{icon}</span>;
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={icon} alt={`${bookmark.title} icon`} className="h-10 w-10 rounded-lg" />
-  );
 }
 
 function getSecondAlignedNow(): Date {
@@ -491,9 +462,10 @@ export default function HomepageDashboard() {
     autoFaviconRefreshRunningRef.current = true;
 
     void (async () => {
+      const currentConfig = configRef.current;
       try {
         const refreshedBookmarks = await Promise.all(
-          config.bookmarks.map(async (bookmark) => {
+          currentConfig.bookmarks.map(async (bookmark) => {
             if (isCustomIconBookmark(bookmark)) {
               return bookmark;
             }
@@ -512,7 +484,7 @@ export default function HomepageDashboard() {
         );
 
         const nextConfig: HomepageConfig = {
-          ...config,
+          ...currentConfig,
           bookmarks: refreshedBookmarks,
           faviconLastRefreshAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -521,14 +493,31 @@ export default function HomepageDashboard() {
         const saved = await saveHomepageConfig(nextConfig);
         setConfig(saved);
       } catch {
-        // Ignore background refresh errors to avoid interrupting normal browsing.
+        // 即使刷新失败也更新时间戳，避免每次 config 变更都重试导致高频失败请求。
+        try {
+          const currentConfig = configRef.current;
+          const fallbackConfig: HomepageConfig = {
+            ...currentConfig,
+            faviconLastRefreshAt: new Date().toISOString(),
+            updatedAt: currentConfig.updatedAt,
+          };
+          const saved = await saveHomepageConfig(fallbackConfig);
+          setConfig(saved);
+        } catch {
+          // 最终兜底：本地更新时间戳，避免无限重试。
+          setConfig((prev) => ({
+            ...prev,
+            faviconLastRefreshAt: new Date().toISOString(),
+          }));
+        }
       } finally {
         autoFaviconRefreshRunningRef.current = false;
       }
     })();
   }, [
-    config,
-    autoFaviconRefreshRunningRef,
+    config.faviconAutoRefreshEnabled,
+    config.faviconAutoRefreshMinutes,
+    config.faviconLastRefreshAt,
   ]);
 
   const markHomepageConfigured = async () => {
@@ -563,17 +552,23 @@ export default function HomepageDashboard() {
     }
 
     setIsUnlockVerifying(true);
-    const verified = await verifyUnlockPassword(password);
-    setIsUnlockVerifying(false);
+    try {
+      const verified = await verifyUnlockPassword(password);
+      if (!verified) {
+        setUnlockError('密码错误，请重试');
+        return;
+      }
 
-    if (!verified) {
-      setUnlockError('密码错误，请重试');
-      return;
+      saveSettingsUnlock();
+      setIsUnlocked(true);
+      setShowUnlockModal(false);
+    } catch (error) {
+      setUnlockError(
+        `验证服务请求失败：${error instanceof Error ? error.message : '未知错误'}`
+      );
+    } finally {
+      setIsUnlockVerifying(false);
     }
-
-    saveSettingsUnlock();
-    setIsUnlocked(true);
-    setShowUnlockModal(false);
   };
 
   const handleSetHomepage = async () => {
@@ -583,40 +578,10 @@ export default function HomepageDashboard() {
 
     setIsSettingHomepage(true);
     const currentUrl = window.location.href;
-    let autoSuccess = false;
 
-    try {
-      const body = document.body as unknown as {
-        style?: { behavior?: string };
-        setHomePage?: (url: string) => void;
-      };
-
-      if (body?.style) {
-        body.style.behavior = 'url(#default#homepage)';
-      }
-
-      if (typeof body?.setHomePage === 'function') {
-        body.setHomePage(currentUrl);
-        autoSuccess = true;
-      }
-    } catch {
-      autoSuccess = false;
-    }
-
-    if (autoSuccess) {
-      try {
-        await markHomepageConfigured();
-        alert('已尝试将当前页面设为主页。');
-      } catch (error) {
-        alert(`已执行设为主页，但同步状态失败：${error instanceof Error ? error.message : '未知错误'}`);
-      } finally {
-        setIsSettingHomepage(false);
-      }
-      return;
-    }
-
+    // 现代浏览器已禁用脚本自动设为主页，统一引导用户手动设置。
     const manualDone = window.confirm(
-      `自动设为主页失败（多数现代浏览器限制此能力）。\n\n请在浏览器设置中将当前网址设为主页：\n${currentUrl}\n\n完成后点击“确定”，我将不再提示。`
+      `请在浏览器设置中将当前网址设为主页：\n${currentUrl}\n\n完成后点击"确定"，我将不再提示。`
     );
 
     if (manualDone) {
@@ -913,6 +878,7 @@ export default function HomepageDashboard() {
 
   const handleSettingsClick = () => {
     if (!isUnlocked) {
+      openUnlockModal('请输入密码以解锁并进入设置');
       return;
     }
 

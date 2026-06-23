@@ -37,6 +37,7 @@ import {
   type VisitStatsResponse,
 } from '@/lib/utils';
 import { isSettingsUnlocked } from '@/lib/unlock-state';
+import BookmarkAvatar, { isCustomIconBookmark } from '@/components/BookmarkAvatar';
 
 type BookmarkFormState = {
   id: string;
@@ -66,36 +67,6 @@ const MAX_BACKGROUND_UPLOAD_MB = Math.floor(MAX_BACKGROUND_UPLOAD_BYTES / (1024 
 function createId(prefix: string): string {
   const random = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now()}_${random}`;
-}
-
-function isCustomIconBookmark(bookmark: Bookmark): boolean {
-  if (bookmark.isCustomIcon) {
-    return true;
-  }
-
-  const icon = bookmark.icon?.trim() || '';
-  return Boolean(icon && !icon.startsWith('http') && !icon.startsWith('data:'));
-}
-
-function BookmarkIconPreview({ bookmark }: { bookmark: Bookmark }) {
-  const icon = bookmark.icon?.trim() || '';
-
-  if (!icon) {
-    return (
-      <span className="text-xl font-bold text-white/90">
-        {bookmark.title.slice(0, 1).toUpperCase()}
-      </span>
-    );
-  }
-
-  if (!icon.startsWith('http') && !icon.startsWith('data:')) {
-    return <span className="text-2xl">{icon}</span>;
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img src={icon} alt={`${bookmark.title} icon`} className="h-10 w-10 rounded-lg" />
-  );
 }
 
 function formatDateTime(value: string): string {
@@ -423,7 +394,7 @@ export default function SettingsDashboard() {
   };
 
   const commitNewsAutoSwitchSeconds = useCallback(() => {
-    const nextSeconds = Math.max(5, Math.min(120, Math.round(newsAutoSwitchSecondsInput)));
+    const nextSeconds = Math.max(5, Math.min(300, Math.round(newsAutoSwitchSecondsInput)));
 
     if (nextSeconds === config.news.autoSwitchSeconds) {
       return;
@@ -1486,10 +1457,10 @@ export default function SettingsDashboard() {
                   <input
                     type="range"
                     min="5"
-                    max="120"
+                    max="300"
                     value={newsAutoSwitchSecondsInput}
                     onChange={(event) => {
-                      const nextSeconds = Math.max(5, Math.min(120, Number(event.target.value)));
+                      const nextSeconds = Math.max(5, Math.min(300, Number(event.target.value)));
                       setNewsAutoSwitchSecondsInput(nextSeconds);
                     }}
                     onPointerUp={commitNewsAutoSwitchSeconds}
@@ -1972,7 +1943,7 @@ export default function SettingsDashboard() {
               >
                 <a href={bookmark.url} target="_blank" rel="noopener noreferrer">
                   <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-white/20">
-                    <BookmarkIconPreview bookmark={bookmark} />
+                    <BookmarkAvatar bookmark={bookmark} />
                   </div>
                   <div className="mb-1 flex items-center justify-between gap-2">
                     <h3 className="truncate font-medium">{bookmark.title}</h3>

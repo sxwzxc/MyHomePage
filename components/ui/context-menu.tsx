@@ -22,7 +22,19 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
   const [position, setPosition] = useState({ x, y });
   const [focusedIndex, setFocusedIndex] = useState(0);
 
-  // Adjust position to keep menu within viewport
+  // 用 ref 镜像 items 与 focusedIndex，避免 keydown 监听器随每次父组件 render 频繁重绑。
+  const itemsRef = useRef(items);
+  const focusedIndexRef = useRef(focusedIndex);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    focusedIndexRef.current = focusedIndex;
+  }, [focusedIndex]);
+
+  // 调整位置以保持菜单在视口内
   useEffect(() => {
     if (!menuRef.current) return;
 
@@ -33,20 +45,20 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
     let adjustedX = x;
     let adjustedY = y;
 
-    // Flip horizontally if menu would overflow right edge
+    // 右边缘溢出则水平翻转
     if (x + menuRect.width > viewportWidth) {
       adjustedX = viewportWidth - menuRect.width - 8;
     }
 
-    // Flip vertically if menu would overflow bottom edge
+    // 下边缘溢出则垂直翻转
     if (y + menuRect.height > viewportHeight) {
       adjustedY = viewportHeight - menuRect.height - 8;
     }
 
-    setPosition({ x: adjustedX, y: adjustedY });
+    setPosition({ x: Math.max(8, adjustedX), y: Math.max(8, adjustedY) });
   }, [x, y]);
 
-  // Close on click outside
+  // 点击外部关闭
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -58,33 +70,33 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [onClose]);
 
-  // Close on Escape key, handle arrow keys
+  // Escape 关闭、方向键导航、回车确认
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const currentItems = itemsRef.current;
       switch (event.key) {
         case 'Escape':
           onClose();
           break;
         case 'ArrowDown':
           event.preventDefault();
-          setFocusedIndex((prev) => (prev + 1) % items.length);
+          setFocusedIndex((prev) => (prev + 1) % currentItems.length);
           break;
         case 'ArrowUp':
           event.preventDefault();
-          setFocusedIndex((prev) => (prev - 1 + items.length) % items.length);
+          setFocusedIndex((prev) => (prev - 1 + currentItems.length) % currentItems.length);
           break;
         case 'Enter':
           event.preventDefault();
-          items[focusedIndex]?.onClick();
+          currentItems[focusedIndexRef.current]?.onClick();
           break;
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose, items, focusedIndex]);
+  }, [onClose]);
 
-  // Render menu in portal
   const menu = (
     <div
       ref={menuRef}
@@ -95,7 +107,7 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
     >
       {items.map((item, index) => (
         <button
-          key={index}
+          key={`${item.label}-${index}`}
           role="menuitem"
           tabIndex={focusedIndex === index ? 0 : -1}
           className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm transition-all duration-150 ${
@@ -109,14 +121,13 @@ export default function ContextMenu({ x, y, items, onClose }: ContextMenuProps) 
           }}
           onMouseEnter={() => setFocusedIndex(index)}
         >
-          {item.icon && <span className="flex-shrink-0">{item.icon}</span>}
+          {item.icon && <span className="shrink-0">{item.icon}</span>}
           <span>{item.label}</span>
         </button>
       ))}
     </div>
   );
 
-  // Only render in browser (not during SSR)
   if (typeof window === 'undefined') {
     return null;
   }

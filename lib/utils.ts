@@ -10,8 +10,11 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-function getFunctionsHost() {
-  return process.env.NODE_ENV === 'development' ? 'http://localhost:8088' : '';
+export function getFunctionsHost() {
+  if (process.env.NODE_ENV === 'development') {
+    return process.env.NEXT_PUBLIC_FUNCTIONS_HOST?.trim() || 'http://localhost:8088';
+  }
+  return '';
 }
 
 const REQUEST_TIMEOUT_MS = 30000;
@@ -461,16 +464,13 @@ export async function verifyUnlockPassword(password: string): Promise<boolean> {
     return false;
   }
 
-  try {
-    const data = await requestJson<{ verified?: boolean }>('/password-verify', {
-      method: 'POST',
-      body: JSON.stringify({ password }),
-    });
+  // 网络或服务端错误会抛出异常，由调用方区分"密码错误"与"请求失败"。
+  const data = await requestJson<{ verified?: boolean }>('/password-verify', {
+    method: 'POST',
+    body: JSON.stringify({ password }),
+  });
 
-    return Boolean(data.verified);
-  } catch {
-    return false;
-  }
+  return Boolean(data.verified);
 }
 
 export async function forceSyncNewsSources(): Promise<void> {

@@ -19,6 +19,7 @@ import {
   NewsSourceId,
   NewsSourceMode,
 } from '@/lib/homepage-config';
+import { getFunctionsHost } from '@/lib/utils';
 
 type NewsItem = {
   title: string;
@@ -46,9 +47,6 @@ type NewsCacheMeta = {
   ttlMinutes: number;
 };
 
-const DEV_FUNCTIONS_HOST =
-  process.env.NEXT_PUBLIC_FUNCTIONS_HOST?.trim() || 'http://localhost:8088';
-const FUNCTIONS_HOST = process.env.NODE_ENV === 'development' ? DEV_FUNCTIONS_HOST : '';
 const WEB_CACHE_TTL_MS = 30 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 30 * 1000;
 
@@ -212,7 +210,7 @@ async function fetchNewsFeed({
   const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${FUNCTIONS_HOST}/news?${params.toString()}`, {
+    const response = await fetch(`${getFunctionsHost()}/news?${params.toString()}`, {
       cache: 'no-store',
       signal: controller.signal,
     });
@@ -280,6 +278,7 @@ export default function NewsSection({
   const [autoSourceCursor, setAutoSourceCursor] = useState(0);
 
   const onConfigChangeRef = useRef(onConfigChange);
+  const hasNotifiedCollapsedRef = useRef(false);
   const sourceModeRef = useRef(sourceMode);
   const sourceIdRef = useRef(sourceId);
   const enabledSourceIdsRef = useRef(enabledSourceIds);
@@ -529,6 +528,12 @@ export default function NewsSection({
   }, [enabled, sourceMode, bundle, autoSwitchSeconds, visibleSourceOptions.length]);
 
   useEffect(() => {
+    // 跳过首次渲染，避免组件挂载时触发无意义的配置保存请求；
+    // 仅在用户实际切换折叠状态后才回传给父组件。
+    if (!hasNotifiedCollapsedRef.current) {
+      hasNotifiedCollapsedRef.current = true;
+      return;
+    }
     const isCollapsed = accordionValue === '';
     onConfigChangeRef.current({ collapsed: isCollapsed });
   }, [accordionValue]);
