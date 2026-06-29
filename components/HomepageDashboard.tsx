@@ -18,7 +18,7 @@ import {
 import { Bookmark, HomepageConfig, DEFAULT_HOMEPAGE_CONFIG } from '@/lib/homepage-config';
 import {
   getGeo,
-  getHomepageConfig,
+  getHomepageConfigWithStatus,
   getVisitCount,
   saveHomepageConfig,
   fetchBookmarkFavicon,
@@ -297,22 +297,25 @@ export default function HomepageDashboard() {
     async function load() {
       setLoadError(null);
 
-      try {
-        const homepageConfig = await getHomepageConfig();
+      const result = await getHomepageConfigWithStatus();
 
-        if (cancelled) {
-          return;
-        }
-
-        setConfig(homepageConfig);
-        setSelectedEngineId(homepageConfig.defaultSearchEngineId);
-
-        void getVisitCount().catch(() => null);
-      } catch (error) {
-        if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : '加载失败');
-        }
+      if (cancelled) {
+        return;
       }
+
+      setConfig(result.config);
+      setSelectedEngineId(result.config.defaultSearchEngineId);
+
+      // 接口失效时不阻断渲染（已用默认/缓存配置），仅显示软提示。
+      if (!result.ok) {
+        setLoadError(
+          result.fromCache
+            ? `配置接口失效，已使用上次缓存配置（${result.error || ''}）`
+            : `配置接口失效，已使用默认配置（${result.error || ''}）`
+        );
+      }
+
+      void getVisitCount().catch(() => null);
     }
 
     void load();

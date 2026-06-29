@@ -17,7 +17,9 @@ export function getFunctionsHost() {
   return '';
 }
 
-const REQUEST_TIMEOUT_MS = 30000;
+// 接口失效时快速失败，避免用户长时间等待白屏。
+// 8s 足够覆盖正常网络抖动，又远小于 EdgeOne 平台函数超时（约 30s）。
+const REQUEST_TIMEOUT_MS = 8000;
 
 function isAbortError(error: unknown): boolean {
   return Boolean(
@@ -287,6 +289,18 @@ export async function getGeo(): Promise<GeoResponse> {
 }
 
 export async function getHomepageConfig(): Promise<HomepageConfig> {
+  const result = await getHomepageConfigWithStatus();
+  return result.config;
+}
+
+export type HomepageConfigResult = {
+  config: HomepageConfig;
+  ok: boolean;
+  fromCache: boolean;
+  error?: string;
+};
+
+export async function getHomepageConfigWithStatus(): Promise<HomepageConfigResult> {
   try {
     const data = await requestJson<HomepageConfig>('/homepage-config', {
       method: 'GET',
@@ -294,14 +308,27 @@ export async function getHomepageConfig(): Promise<HomepageConfig> {
 
     const config = normalizeHomepageConfig(data);
     writeConfigCache(config);
-    return config;
-  } catch {
+    return { config, ok: true, fromCache: false };
+  } catch (error) {
     const cached = readConfigCache();
-    if (cached) return cached;
+    if (cached) {
+      return {
+        config: cached,
+        ok: false,
+        fromCache: true,
+        error: error instanceof Error ? error.message : '配置接口失效',
+      };
+    }
+
     return {
-      ...DEFAULT_HOMEPAGE_CONFIG,
-      searchEngines: [...DEFAULT_HOMEPAGE_CONFIG.searchEngines],
-      bookmarks: [...DEFAULT_HOMEPAGE_CONFIG.bookmarks],
+      config: {
+        ...DEFAULT_HOMEPAGE_CONFIG,
+        searchEngines: [...DEFAULT_HOMEPAGE_CONFIG.searchEngines],
+        bookmarks: [...DEFAULT_HOMEPAGE_CONFIG.bookmarks],
+      },
+      ok: false,
+      fromCache: false,
+      error: error instanceof Error ? error.message : '配置接口失效',
     };
   }
 }

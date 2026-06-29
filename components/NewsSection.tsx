@@ -48,7 +48,7 @@ type NewsCacheMeta = {
 };
 
 const WEB_CACHE_TTL_MS = 30 * 60 * 1000;
-const FETCH_TIMEOUT_MS = 30 * 1000;
+const FETCH_TIMEOUT_MS = 8 * 1000;
 
 type NewsApiResponse = {
   mode: NewsSourceMode;
