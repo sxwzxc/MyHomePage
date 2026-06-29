@@ -9,13 +9,15 @@ const NEWS_REFRESH_CURSOR_KEY = 'homepage:news:refresh:cursor:v1';
 const CACHE_TTL_MS = 30 * 60 * 1000;
 const CACHE_FETCH_LIMIT = 30;
 const CACHE_CHUNK_MAX_BYTES = 20 * 1024 * 1024;
-const SOURCE_FETCH_TIMEOUT_MS = 15 * 1000;
-const SOURCE_RETRY_DELAY_MS = 3 * 1000;
+const SOURCE_FETCH_TIMEOUT_MS = 10 * 1000;
+const SOURCE_RETRY_DELAY_MS = 1 * 1000;
 const BACKGROUND_REFRESH_BATCH_SIZE = 3;
+// EdgeOne fetch 连接级超时，必须远小于平台函数超时（约 30s），
+// 否则上游慢响应会让函数一直挂起直到平台返回 504。
 const EO_TIMEOUT_SETTING = {
-  connectTimeout: 300000,
-  readTimeout: 300000,
-  writeTimeout: 300000,
+  connectTimeout: 5000,
+  readTimeout: 10000,
+  writeTimeout: 10000,
 };
 
 const NEWS_SOURCES = {
@@ -1001,16 +1003,43 @@ export async function onRequestGet(context) {
     }
 
     if (!hasCache) {
-      const fresh = await refreshNewsCache(kv);
+      // 缓存为空时不能阻塞等待全部 11 个来源抓取完成（会触发平台 504）。
+      // 策略：同步只抓第一个来源快速返回，其余来源交给 context.waitUntil 后台刷新。
+      const now = Date.now();
+      const quickBundle = {
+        version: 1,
+        updatedAt: new Date(now).toISOString(),
+        expiresAt: new Date(now + CACHE_TTL_MS).toISOString(),
+        sources: {},
+      };
+
+      try {
+        const firstSourceId = AUTO_SOURCE_ORDER[0];
+        const firstSource = NEWS_SOURCES[firstSourceId];
+        const items = await fetchFromSourceHost(firstSource, HOSTS[0], CACHE_FETCH_LIMIT);
+        if (items.length > 0) {
+          quickBundle.sources[firstSourceId] = {
+            sourceId: firstSource.id,
+            sourceLabel: firstSource.label,
+            host: HOSTS[0],
+            items,
+          };
+        }
+      } catch {
+        // 单源抓取失败也继续返回，后台会重试。
+      }
+
+      scheduleBackgroundRefresh(context, refreshNewsCache(kv));
+
       return jsonResponse(
         buildResponsePayload({
           mode,
           sourceId,
           limit,
-          bundle: fresh,
-          warnings: fresh.warnings,
+          bundle: quickBundle,
+          warnings: ['首次加载，正在后台获取更多新闻来源，请稍后刷新'],
           cacheFrom: 'origin',
-          isStale: false,
+          isStale: true,
         })
       );
     }
